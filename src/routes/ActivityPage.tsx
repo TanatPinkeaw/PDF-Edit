@@ -1,0 +1,276 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { ToolPage } from '../components/ToolPage';
+import { apiFetch, type RunRecord } from '../lib/api';
+import { saveReplay } from '../lib/replay';
+import { navigate } from '../lib/router';
+import { formatBytes } from '../lib/share';
+import { READY_TOOLS, toolTitle } from '../lib/tools';
+import { useAccount } from '../state/account-context';
+
+const STATUS_LABELS: Record<RunRecord['status'], string> = {
+  running: 'กำลังทำ',
+  succeeded: 'สำเร็จ',
+  failed: 'ล้มเหลว',
+  canceled: 'ยกเลิก',
+  abandoned: 'ค้าง',
+};
+
+/** Only tools whose settings can be restored from stored params. */
+const REPLAYABLE = new Set(['rotate', 'page-numbers', 'watermark']);
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleString('th-TH', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function describeParams(params: Record<string, unknown>): string {
+  const entries = Object.entries(params).filter(([, value]) => value !== null && value !== '');
+  if (entries.length === 0) return '—';
+  const text = entries
+    .slice(0, 4)
+    .map(([key, value]) => {
+      const rendered = Array.isArray(value) ? value.join(',') : String(value);
+      return `${key}=${rendered.length > 24 ? `${rendered.slice(0, 24)}…` : rendered}`;
+    })
+    .join(' · ');
+  return text;
+}
+
+export function ActivityPage() {
+  const {
+    status: accountStatus,
+    user,
+    quota,
+    authConfigured,
+    signIn,
+    busy: accountBusy,
+    refresh,
+    deleteEverything,
+  } = useAccount();
+
+  const [runs, setRuns] = useState<RunRecord[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState('all');
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const response = await apiFetch<{ runs: RunRecord[] }>('/api/runs?limit=50');
+      setRuns(response.runs);
+      setError(null);
+    } catch (loadError) {
+      setRuns([]);
+      setError(loadError instanceof Error ? loadError.message : 'โหลดประวัติไม่สำเร็จ');
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const tools = useMemo(
+    () => [...new Set((runs ?? []).map((run) => run.tool))].sort(),
+    [runs],
+  );
+  const visible = useMemo(
+    () => (runs ?? []).filter((run) => filter === 'all' || run.tool === filter),
+    [filter, runs],
+  );
+
+  const clearHistory = async () => {
+    setBusy(true);
+    try {
+      await apiFetch('/api/runs', { method: 'DELETE' });
+      setRuns([]);
+      setConfirmClear(false);
+    } catch (clearError) {
+      setError(clearError instanceof Error ? clearError.message : 'ล้างประวัติไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeEverything = async () => {
+    setBusy(true);
+    try {
+      await deleteEverything();
+      setRuns([]);
+      setConfirmDeleteAll(false);
+      await refresh();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'ลบข้อมูลไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rerun = (run: RunRecord) => {
+    const tool = READY_TOOLS.find((entry) => entry.slug === run.tool && entry.href);
+    if (!tool?.href) return;
+    saveReplay(run.tool, run.params);
+    navigate(tool.href.replace('#', ''));
+  };
+
+  return (
+    <ToolPage
+      title="ประวัติการใช้งาน"
+      description="ทุกครั้งที่รันเครื่องมือจะถูกบันทึกใน PostgreSQL — ไม่มีเนื้อหาไฟล์ เก็บเฉพาะ metadata"
+      actions={
+        <button type="button" className="button-secondary" onClick={() => void load()} disabled={busy}>
+          โหลดใหม่
+        </button>
+      }
+    >
+      <div className="activity">
+        <section className="panel activity-summary">
+          <div className="activity-account">
+            <div>
+              <span className="field-label">พื้นที่ทำงาน</span>
+              <p className="activity-account-name">
+                {user ? user.email : `ไม่ระบุตัวตน · ${quota.unlimited ? 'ไม่จำกัด' : `${quota.used}/${quota.limit ?? 3} ครั้งใน 24 ชม.`}`}
+              </p>
+            </div>
+            {!user && (
+              <button
+                type="button"
+                className="button-primary"
+                onClick={() => void signIn()}
+                disabled={accountBusy || !authConfigured}
+              >
+                {authConfigured ? 'เข้าสู่ระบบด้วย Google' : 'ยังไม่ได้ตั้งค่า Google Client ID'}
+              </button>
+            )}
+          </div>
+
+          <div className="activity-danger">
+            {confirmClear ? (
+              <>
+                <span className="hint">ล้างประวัติทั้งหมดในพื้นที่นี้?</span>
+                <button type="button" className="button-secondary" onClick={() => setConfirmClear(false)}>
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  className="button-danger"
+                  onClick={() => void clearHistory()}
+                  disabled={busy}
+                >
+                  ยืนยันล้างประวัติ
+                </button>
+              </>
+            ) : (
+              <button type="button" className="button-secondary" onClick={() => setConfirmClear(true)}>
+                ล้างประวัติ
+              </button>
+            )}
+
+            {confirmDeleteAll ? (
+              <>
+                <span className="hint">ลบ workspace, ประวัติ, พรีเซ็ต และลิงก์แชร์ทั้งหมด?</span>
+                <button type="button" className="button-secondary" onClick={() => setConfirmDeleteAll(false)}>
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  className="button-danger"
+                  onClick={() => void removeEverything()}
+                  disabled={busy}
+                >
+                  ยืนยันลบทั้งหมด
+                </button>
+              </>
+            ) : (
+              <button type="button" className="button-ghost" onClick={() => setConfirmDeleteAll(true)}>
+                ลบข้อมูลของฉัน
+              </button>
+            )}
+          </div>
+        </section>
+
+        {accountStatus === 'offline' && (
+          <p className="form-error">เชื่อมต่อ API ไม่ได้ — ประวัติจะแสดงได้เมื่อเซิร์ฟเวอร์พร้อม</p>
+        )}
+        {error && <p className="form-error">{error}</p>}
+
+        <section className="panel">
+          <header className="panel-head">
+            <h2>รายการล่าสุด</h2>
+            <div className="activity-filter">
+              <label className="field-label" htmlFor="activity-filter">
+                เครื่องมือ
+              </label>
+              <select
+                id="activity-filter"
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+              >
+                <option value="all">ทั้งหมด</option>
+                {tools.map((tool) => (
+                  <option key={tool} value={tool}>
+                    {toolTitle(tool)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </header>
+
+          {runs === null ? (
+            <p className="hint">กำลังโหลด…</p>
+          ) : visible.length === 0 ? (
+            <p className="hint">
+              ยังไม่มีประวัติ — ลองรันเครื่องมือสักครั้ง ระบบจะบันทึกไว้ที่นี่
+            </p>
+          ) : (
+            <ul className="run-list">
+              {visible.map((run) => (
+                <li key={run.id} className="run-row" data-status={run.status}>
+                  <div className="run-main">
+                    <div className="run-title">
+                      <strong>{toolTitle(run.tool)}</strong>
+                      <span className={`status-chip`} data-status={run.status}>
+                        {STATUS_LABELS[run.status]}
+                      </span>
+                    </div>
+                    <p className="run-meta">
+                      {run.inputName ?? 'ไม่ทราบชื่อไฟล์'}
+                      {run.inputPages ? ` · ${run.inputPages} หน้า` : ''}
+                      {run.outputBytes ? ` → ${formatBytes(run.outputBytes)}` : ''}
+                    </p>
+                    <p className="run-params">{describeParams(run.params)}</p>
+                    {run.errorMessage && <p className="form-error">{run.errorMessage}</p>}
+                  </div>
+
+                  <div className="run-side">
+                    <span>{formatTime(run.startedAt)}</span>
+                    {run.durationMs !== null && (
+                      <span>
+                        {(run.durationMs / 1000).toFixed(run.durationMs < 10_000 ? 2 : 0)} วินาที
+                      </span>
+                    )}
+                    {REPLAYABLE.has(run.tool) && (
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() => rerun(run)}
+                        title="เปิดเครื่องมือพร้อมค่าเดิม"
+                      >
+                        รันอีกครั้ง
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </ToolPage>
+  );
+}
