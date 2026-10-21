@@ -9,6 +9,7 @@ import { ensureDatabase } from '../../src/db/create.ts';
 import { runMigrations } from '../../src/db/migrate.ts';
 import { DEFAULT_TEST_DATABASE_URL, readEnv, type Env } from '../../src/env.ts';
 import { ApiError } from '../../src/http.ts';
+import type { Mailer, VerificationMail } from '../../src/mail.ts';
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? DEFAULT_TEST_DATABASE_URL;
 
@@ -32,7 +33,8 @@ export async function closeTestDb(): Promise<void> {
 export async function truncateAll(db: Db): Promise<void> {
   await db.query(
     'truncate app_user, workspace, auth_session, job_run, preset, artifact, share_link, ' +
-      'credit_wallet, credit_entry, redeem_code, redeem_use restart identity cascade',
+      'credit_wallet, credit_entry, redeem_code, redeem_use, email_verification ' +
+      'restart identity cascade',
   );
 }
 
@@ -63,16 +65,38 @@ export async function createTestApp(options: {
   db?: Db;
   env?: Env;
   googleVerifier?: GoogleVerifier | null;
-} = {}): Promise<{ app: FastifyInstance; db: Db; env: Env }> {
+  mailer?: Mailer;
+} = {}): Promise<{ app: FastifyInstance; db: Db; env: Env; mailer: Mailer }> {
   const db = options.db ?? (await testDb());
   const env = options.env ?? testEnv();
+  const mailer = options.mailer ?? recordingMailer();
   const app = await buildServer({
     env,
     db,
+    mailer,
     googleVerifier:
       options.googleVerifier === undefined ? null : options.googleVerifier,
   });
-  return { app, db, env };
+  return { app, db, env, mailer };
+}
+
+/**
+ * Mail without a mailbox: records every code so a test can confirm it, and
+ * reports itself as enforced so the credit gate stays on.
+ */
+export type RecordingMailer = Mailer & { sent: VerificationMail[]; lastCode(): string };
+
+export function recordingMailer(): RecordingMailer {
+  const sent: VerificationMail[] = [];
+  return {
+    mode: 'log',
+    enforced: true,
+    sent,
+    lastCode: () => sent[sent.length - 1]?.code ?? '',
+    async sendVerificationCode(mail) {
+      sent.push(mail);
+    },
+  };
 }
 
 /** Verifier stub: only `valid-credential` signs in. */

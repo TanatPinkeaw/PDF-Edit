@@ -67,6 +67,9 @@ describe('credit balance', () => {
 
   it('keeps one member wallet across browsers', async () => {
     const cookie = await signUp('member@example.com');
+    // Charging a run needs a verified mailbox; that gate has its own tests, and
+    // this one is about the wallet surviving a browser change.
+    await db.query("update app_user set email_verified = true where email = 'member@example.com'");
     const otherBrowser = originHeaders(workspaceToken());
 
     const me = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie, ...otherBrowser } });

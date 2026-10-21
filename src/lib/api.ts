@@ -34,11 +34,25 @@ export type PublicUser = {
   pictureUrl: string | null;
 };
 
+/** `log`/`disabled` mean no SMTP is configured; only `log` exposes the code. */
+export type MailMode = 'smtp' | 'log' | 'disabled';
+
+export type VerificationStatus = {
+  verified: boolean;
+  /** False when the deployment cannot send mail, so nothing is blocked. */
+  enforced: boolean;
+  mailMode: MailMode;
+  pendingExpiresAt: string | null;
+  resendAt: string | null;
+};
+
 export type AccountSnapshot = {
   workspaceId: string | null;
   user: PublicUser | null;
   credits: Credits;
   recentEntries: CreditEntry[];
+  /** Null for anonymous browsers: there is no mailbox to prove. */
+  verification: VerificationStatus | null;
   authConfigured: boolean;
   googleClientId: string | null;
 };

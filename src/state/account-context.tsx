@@ -23,6 +23,7 @@ import {
   type AccountSnapshot,
   type CreditEntry,
   type Credits,
+  type VerificationStatus,
 } from '../lib/api';
 import { requestGoogleCredential } from '../lib/google-auth';
 import { CREDITS_EVENT } from '../lib/runs';
@@ -37,9 +38,15 @@ type AccountValue = {
   user: AccountSnapshot['user'];
   authConfigured: boolean;
   googleClientId: string | null;
+  /** Null for anonymous browsers. */
+  verification: VerificationStatus | null;
+  /** Set only while mail is logged instead of sent (no SMTP configured). */
+  devCode: string | null;
   error: string | null;
   busy: boolean;
   refresh: () => Promise<void>;
+  sendVerificationCode: () => Promise<VerificationStatus>;
+  confirmEmailCode: (code: string) => Promise<VerificationStatus>;
   signUp: (email: string, password: string, name?: string) => Promise<boolean>;
   signIn: (email: string, password: string) => Promise<boolean>;
   signInWithGoogle: () => Promise<void>;
@@ -59,6 +66,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AccountStatus>('loading');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [devCode, setDevCode] = useState<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -193,6 +201,54 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const applyVerification = useCallback((verification: VerificationStatus) => {
+    if (!mounted.current) return;
+    setSnapshot((current) => (current ? { ...current, verification } : current));
+  }, []);
+
+  const sendVerificationCode = useCallback(async (): Promise<VerificationStatus> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await apiFetch<{ verification: VerificationStatus; devCode?: string }>(
+        '/api/auth/verify/send',
+        { method: 'POST' },
+      );
+      applyVerification(response.verification);
+      setDevCode(response.devCode ?? null);
+      return response.verification;
+    } catch (sendError) {
+      const message = errorMessage(sendError);
+      if (mounted.current) setError(message);
+      throw sendError;
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }, [applyVerification]);
+
+  const confirmEmailCode = useCallback(
+    async (code: string): Promise<VerificationStatus> => {
+      setBusy(true);
+      setError(null);
+      try {
+        const response = await apiFetch<{ verification: VerificationStatus }>(
+          '/api/auth/verify/confirm',
+          { method: 'POST', body: { code } },
+        );
+        applyVerification(response.verification);
+        setDevCode(null);
+        return response.verification;
+      } catch (confirmError) {
+        const message = errorMessage(confirmError);
+        if (mounted.current) setError(message);
+        throw confirmError;
+      } finally {
+        if (mounted.current) setBusy(false);
+      }
+    },
+    [applyVerification],
+  );
+
   const deleteEverything = useCallback(async () => {
     setBusy(true);
     try {
@@ -215,6 +271,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       user: snapshot?.user ?? null,
       authConfigured: snapshot?.authConfigured ?? false,
       googleClientId: snapshot?.googleClientId ?? null,
+      verification: snapshot?.verification ?? null,
+      devCode,
       error,
       busy,
       refresh,
@@ -223,12 +281,15 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       signInWithGoogle,
       signOut,
       redeem,
+      sendVerificationCode,
+      confirmEmailCode,
       deleteEverything,
     }),
     [
       status,
       snapshot,
       error,
+      devCode,
       busy,
       refresh,
       signUp,
@@ -236,6 +297,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       signInWithGoogle,
       signOut,
       redeem,
+      sendVerificationCode,
+      confirmEmailCode,
       deleteEverything,
     ],
   );

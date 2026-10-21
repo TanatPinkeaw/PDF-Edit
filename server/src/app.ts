@@ -6,18 +6,22 @@ import type { Db } from './db.ts';
 import type { Env } from './env.ts';
 import { ApiError } from './http.ts';
 import { CONVERT_LIMITS } from './convert.ts';
+import { createMailer, type Mailer } from './mail.ts';
 import { registerAccountRoutes } from './routes/account.ts';
 import { registerConvertRoutes } from './routes/convert.ts';
 import { registerCreditRoutes } from './routes/credits.ts';
 import { registerJobRoutes } from './routes/jobs.ts';
 import { registerPresetRoutes } from './routes/presets.ts';
 import { registerShareRoutes } from './routes/shares.ts';
+import { registerVerificationRoutes } from './routes/verification.ts';
 
 export type BuildServerOptions = {
   env: Env;
   db: Db;
   /** Injected by tests; production builds it from GOOGLE_CLIENT_ID. */
   googleVerifier?: GoogleVerifier | null;
+  /** Injected by tests; otherwise built from SMTP_URL. */
+  mailer?: Mailer;
 };
 
 /** Both loopback spellings count as the app origin during local development. */
@@ -140,9 +144,12 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     }
   });
 
-  registerAccountRoutes(app, { db, env, googleVerifier });
-  registerCreditRoutes(app, { db, env });
-  registerJobRoutes(app, { db, env });
+  const mailer = options.mailer ?? createMailer(env);
+
+  registerAccountRoutes(app, { db, env, mailer, googleVerifier });
+  registerVerificationRoutes(app, { db, mailer });
+  registerCreditRoutes(app, { db, env, mailer });
+  registerJobRoutes(app, { db, env, mailer });
   registerPresetRoutes(app, { db });
   registerShareRoutes(app, { db, env });
   registerConvertRoutes(app, { env });

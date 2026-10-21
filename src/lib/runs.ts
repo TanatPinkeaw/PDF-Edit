@@ -21,6 +21,17 @@ export class CreditsExceededError extends Error {
   }
 }
 
+/**
+ * The mailbox is not verified yet, so the server refuses to charge a credit.
+ * Unlike an unreachable API this must stop the work instead of running offline.
+ */
+export class VerificationRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'VerificationRequiredError';
+  }
+}
+
 export type ToolOutput = {
   name: string;
   bytes: Uint8Array;
@@ -76,6 +87,9 @@ export async function beginRun(
       if (credits) announceCredits(credits);
       throw new CreditsExceededError(error.message, credits);
     }
+    if (error instanceof ApiError && error.code === 'email_unverified') {
+      throw new VerificationRequiredError(error.message);
+    }
     console.warn('บันทึกประวัติการใช้งานไม่ได้ — ทำงานต่อในเครื่อง', error);
     return null;
   }
@@ -117,7 +131,7 @@ export async function failRun(runId: string, error: unknown): Promise<void> {
 export type RunStart =
   /** `runId` is null when the API is unreachable; the work still goes ahead. */
   | { proceed: true; runId: string | null }
-  | { proceed: false; error: CreditsExceededError };
+  | { proceed: false; error: CreditsExceededError | VerificationRequiredError };
 
 /**
  * Decides whether a tool action may start.
@@ -133,7 +147,9 @@ export async function startRun(
   try {
     return { proceed: true, runId: await beginRun(tool, params, input) };
   } catch (error) {
-    if (error instanceof CreditsExceededError) return { proceed: false, error };
+    if (error instanceof CreditsExceededError || error instanceof VerificationRequiredError) {
+      return { proceed: false, error };
+    }
     console.warn('เริ่มบันทึกงานไม่ได้ — ทำงานต่อในเครื่อง', error);
     return { proceed: true, runId: null };
   }

@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CREDITS_EVENT, CreditsExceededError, startRun } from '../src/lib/runs';
+import {
+  CREDITS_EVENT,
+  CreditsExceededError,
+  VerificationRequiredError,
+  startRun,
+} from '../src/lib/runs';
 
 const credits = { balance: 2, allowance: 3, member: false };
 const emptyCredits = { balance: 0, allowance: 3, member: false };
@@ -59,12 +64,30 @@ describe('startRun', () => {
     expect(started.proceed).toBe(false);
     if (started.proceed) throw new Error('unreachable');
     expect(started.error).toBeInstanceOf(CreditsExceededError);
+    if (!(started.error instanceof CreditsExceededError)) throw new Error('unreachable');
     expect(started.error.message).toBe('เครดิตหมดแล้ว — เติมเครดิตหรือสมัครสมาชิก');
     expect(started.error.credits).toEqual(emptyCredits);
     // The badge learns the empty balance from the refusal itself.
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ detail: emptyCredits }),
     );
+  });
+
+  it('refuses to start when the email is not verified yet', async () => {
+    stubFetch(() =>
+      jsonResponse(
+        { error: { code: 'email_unverified', message: 'ยืนยันอีเมลก่อนใช้เครดิต' } },
+        403,
+      ),
+    );
+
+    const started = await startRun('organize', { action: 'download' });
+
+    // Unlike an unreachable API this is a product gate: the work must not run.
+    expect(started.proceed).toBe(false);
+    if (started.proceed) throw new Error('unreachable');
+    expect(started.error).toBeInstanceOf(VerificationRequiredError);
+    expect(started.error.message).toBe('ยืนยันอีเมลก่อนใช้เครดิต');
   });
 
   it('still runs the browser-only work when the API is unreachable', async () => {

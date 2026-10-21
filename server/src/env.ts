@@ -18,6 +18,13 @@ export type Env = {
   sessionTtlDays: number;
   /** Headless LibreOffice binary used by the Word/PDF conversion routes. */
   sofficePath: string;
+  /**
+   * `smtp://user:pass@host:587` or `smtps://user:pass@host:465`. Missing means
+   * no mail can be sent: dev logs the code, production refuses to start a send.
+   */
+  smtpUrl: string | null;
+  /** Envelope sender for verification mail. */
+  mailFrom: string;
   isProduction: boolean;
 };
 
@@ -57,6 +64,8 @@ export function readEnv(source: Record<string, string | undefined> = process.env
     shareTtlDays: readInt(source.SHARE_TTL_DAYS, 7, 'SHARE_TTL_DAYS'),
     sessionTtlDays: readInt(source.SESSION_TTL_DAYS, 30, 'SESSION_TTL_DAYS'),
     sofficePath: source.SOFFICE_PATH?.trim() || 'soffice',
+    smtpUrl: source.SMTP_URL?.trim() || null,
+    mailFrom: source.MAIL_FROM?.trim() || 'PDF Studio <no-reply@localhost>',
     isProduction,
   };
 }

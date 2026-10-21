@@ -5,6 +5,8 @@ import { getCredits, insertChargedRun, openWallet, refundRunCredits } from '../c
 import type { Db } from '../db.ts';
 import type { Env } from '../env.ts';
 import { ApiError, badRequest, isPlainObject, readObjectBody, readString } from '../http.ts';
+import type { Mailer } from '../mail.ts';
+import { assertCanSpendCredits } from '../verification.ts';
 
 const MAX_PARAMS_BYTES = 8_000;
 const STALE_RUN_MINUTES = 10;
@@ -94,8 +96,8 @@ async function markStaleRunsAbandoned(db: Db, context: RequestContext): Promise<
   }
 }
 
-export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env }): void {
-  const { db, env } = deps;
+export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env; mailer: Mailer }): void {
+  const { db, env, mailer } = deps;
 
   const grantFor = (context: RequestContext) =>
     context.user
@@ -111,6 +113,9 @@ export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env
   app.post('/api/runs', async (request, reply) => {
     const context = await resolveContext(db, request);
     const workspaceId = requireWorkspace(context);
+    // A run is the only thing that takes a credit, so this is where an
+    // unverified email has to stop the request.
+    await assertCanSpendCredits(db, mailer, context);
     const body = readObjectBody(request.body);
 
     const tool = readString(body, 'tool', { required: true, maxLength: 60, pattern: /^[a-z0-9-]+$/ });

@@ -29,7 +29,9 @@ import {
 import type { Db } from '../db.ts';
 import type { Env } from '../env.ts';
 import { ApiError, badRequest, readObjectBody, readString } from '../http.ts';
+import type { Mailer } from '../mail.ts';
 import { createSigninGuard } from '../signin-guard.ts';
+import { describeVerification } from '../verification.ts';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 8;
@@ -75,9 +77,9 @@ async function adoptWorkspace(
 
 export function registerAccountRoutes(
   app: FastifyInstance,
-  deps: { db: Db; env: Env; googleVerifier: GoogleVerifier | null },
+  deps: { db: Db; env: Env; mailer: Mailer; googleVerifier: GoogleVerifier | null },
 ): void {
-  const { db, env, googleVerifier } = deps;
+  const { db, env, mailer, googleVerifier } = deps;
   const signinGuard = createSigninGuard();
 
   const state = async (
@@ -104,6 +106,8 @@ export function registerAccountRoutes(
       user: resolved.user,
       credits,
       recentEntries: await listCreditEntries(db, wallet.id, 5),
+      // Anonymous browsers have no mailbox, so there is nothing to verify.
+      verification: resolved.user ? await describeVerification(db, mailer, resolved.user) : null,
       authConfigured: googleVerifier !== null,
       googleClientId: env.googleClientId,
     };

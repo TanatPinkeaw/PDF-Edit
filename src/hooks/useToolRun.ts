@@ -4,6 +4,7 @@ import { downloadBytes, mimeForName } from '../lib/download';
 import { PdfError } from '../lib/pdf-ops';
 import {
   CreditsExceededError,
+  VerificationRequiredError,
   completeRun,
   failRun,
   startRun,
@@ -95,6 +96,10 @@ export function useToolRun(): ToolRun {
         } catch (error) {
           if (error instanceof CreditsExceededError) {
             setQuotaMessage(error.message);
+            session.notify('error', error.message);
+          } else if (error instanceof VerificationRequiredError) {
+            // The verify bar is already on screen; the toast only explains why
+            // this click did nothing.
             session.notify('error', error.message);
           } else {
             session.notify('error', describe(error));

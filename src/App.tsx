@@ -4,6 +4,7 @@ import { PasswordDialog } from './components/PasswordDialog';
 import { CreditBadge } from './components/CreditBadge';
 import { ShareStrip } from './components/ShareStrip';
 import { SignInButton } from './components/SignInButton';
+import { VerifyEmailBar } from './components/VerifyEmailBar';
 import { useRoute } from './lib/router';
 import { READY_TOOLS } from './lib/tools';
 import { ActivityPage } from './routes/ActivityPage';
@@ -142,6 +143,8 @@ function Shell() {
           <SignInButton />
         </div>
       </header>
+
+      <VerifyEmailBar />
 
       {page}
 
