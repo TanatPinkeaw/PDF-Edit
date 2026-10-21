@@ -53,6 +53,8 @@ export type AccountSnapshot = {
   recentEntries: CreditEntry[];
   /** Null for anonymous browsers: there is no mailbox to prove. */
   verification: VerificationStatus | null;
+  /** Null for anonymous browsers; false means the account signed up with Google. */
+  passwordSet: boolean | null;
   authConfigured: boolean;
   googleClientId: string | null;
 };

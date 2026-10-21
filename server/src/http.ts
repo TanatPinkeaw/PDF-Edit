@@ -16,6 +16,7 @@ export type ApiErrorCode =
   | 'code_expired'
   | 'email_unverified'
   | 'already_verified'
+  | 'no_password'
   | 'mail_not_configured'
   | 'mail_failed'
   | 'quota_exceeded'

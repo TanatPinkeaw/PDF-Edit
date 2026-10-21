@@ -254,6 +254,15 @@ export async function findUserByEmail(
   return { user: toPublicUser(row), passwordHash: row.password_hash };
 }
 
+/** Google-only accounts have no password to change or reset. */
+export async function userHasPassword(db: Db, userId: string): Promise<boolean> {
+  const result = await db.query<{ has_password: boolean }>(
+    'select password_hash is not null as has_password from app_user where id = $1',
+    [userId],
+  );
+  return result.rows[0]?.has_password === true;
+}
+
 export async function findUserById(db: Db, id: string): Promise<PublicUser | null> {
   const result = await db.query<UserRow>(
     'select id, email, name, picture_url from app_user where id = $1',

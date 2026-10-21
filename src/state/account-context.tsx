@@ -40,6 +40,8 @@ type AccountValue = {
   googleClientId: string | null;
   /** Null for anonymous browsers. */
   verification: VerificationStatus | null;
+  /** Null for anonymous browsers; false means Google-only (no password). */
+  passwordSet: boolean | null;
   /** Set only while mail is logged instead of sent (no SMTP configured). */
   devCode: string | null;
   error: string | null;
@@ -272,6 +274,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       authConfigured: snapshot?.authConfigured ?? false,
       googleClientId: snapshot?.googleClientId ?? null,
       verification: snapshot?.verification ?? null,
+      passwordSet: snapshot?.passwordSet ?? null,
       devCode,
       error,
       busy,

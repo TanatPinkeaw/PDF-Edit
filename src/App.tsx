@@ -9,6 +9,7 @@ import { useRoute } from './lib/router';
 import { READY_TOOLS } from './lib/tools';
 import { ActivityPage } from './routes/ActivityPage';
 import { AuthPage } from './routes/AuthPage';
+import { ChangePasswordPage } from './routes/ChangePasswordPage';
 import { CompressPage } from './routes/CompressPage';
 import { ConvertPage } from './routes/ConvertPage';
 import { CropPage } from './routes/CropPage';
@@ -101,6 +102,9 @@ function Shell() {
       break;
     case 'signin':
       page = <AuthPage mode="signin" />;
+      break;
+    case 'password':
+      page = <ChangePasswordPage />;
       break;
     case 'forgot':
       page = <ForgotPasswordPage />;

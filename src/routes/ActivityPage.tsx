@@ -210,7 +210,11 @@ export function ActivityPage() {
             <p className="credit-balance-line">
               <strong>{credits.balance}</strong> เครดิต
             </p>
-            {!user && (
+            {user ? (
+              <a className="button-ghost" href="#/password">
+                เปลี่ยนรหัสผ่าน
+              </a>
+            ) : (
               <div className="activity-auth">
                 <a className="button-primary" href="#/signup">
                   สมัครสมาชิก
