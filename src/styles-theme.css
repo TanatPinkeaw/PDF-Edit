@@ -29,6 +29,8 @@
   --display: 'Krub', 'Noto Sans Thai', 'Segoe UI', system-ui, sans-serif;
   --font: 'Noto Sans Thai', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --mono: 'Cascadia Code', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  /* Marker squiggle used under the wordmark; a mask tile so it takes --accent. */
+  --squiggle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='10' viewBox='0 0 20 10'%3E%3Cpath d='M0 5Q5 1 10 5Q15 9 20 5' fill='none' stroke='%23fff' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
 body {
@@ -95,21 +97,43 @@ pre {
 }
 
 .brand h1 {
+  position: relative;
+  display: inline-block;
+  padding-bottom: 10px;
   font-family: var(--display);
   font-size: 20px;
   font-weight: 600;
   letter-spacing: 0.01em;
   text-transform: uppercase;
   color: var(--ink);
-  text-decoration: underline wavy var(--accent);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 5px;
-  transition: text-decoration-color 160ms ease;
 }
 
-.brand:hover h1,
-.brand:focus-visible h1 {
-  text-decoration-color: var(--accent-dark);
+/* Marker stroke under the wordmark: hand-drawn weight and a slight tilt, so it
+   reads as a pen squiggle rather than a browser underline. */
+.brand h1::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  bottom: 0;
+  left: -4px;
+  height: 10px;
+  background-color: var(--accent);
+  -webkit-mask-image: var(--squiggle);
+  mask-image: var(--squiggle);
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+  -webkit-mask-position: left bottom;
+  mask-position: left bottom;
+  -webkit-mask-size: 20px 10px;
+  mask-size: 20px 10px;
+  transform: rotate(-0.9deg);
+  transform-origin: left bottom;
+  transition: background-color 160ms ease;
+}
+
+.brand:hover h1::after,
+.brand:focus-visible h1::after {
+  background-color: var(--accent-dark);
 }
 
 .brand-sub {
