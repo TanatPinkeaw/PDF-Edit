@@ -5,7 +5,8 @@
  * Only hashes are stored; the raw workspace token never reaches the database.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
@@ -46,6 +47,62 @@ export async function findOrCreateWorkspace(db: Db, token: string): Promise<Work
 
 export async function attachWorkspaceToUser(db: Db, workspaceId: string, userId: string): Promise<void> {
   await db.query('update workspace set user_id = $2 where id = $1', [workspaceId, userId]);
+}
+
+/**
+ * Passwords: scrypt from the standard library, so no native dependency is
+ * needed. Parameters are stored inside the hash string, which keeps old hashes
+ * verifiable after a future cost increase.
+ */
+const SCRYPT = { N: 16_384, r: 8, p: 1, keylen: 32, maxmem: 64 * 1024 * 1024 } as const;
+const scryptAsync = promisify(scrypt) as (
+  password: string,
+  salt: Buffer,
+  keylen: number,
+  options: { N: number; r: number; p: number; maxmem: number },
+) => Promise<Buffer>;
+
+/** Emails are matched case-insensitively, so they are stored normalised. */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16);
+  const hash = await scryptAsync(password.normalize('NFKC'), salt, SCRYPT.keylen, SCRYPT);
+  return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('base64')}$${hash.toString('base64')}`;
+}
+
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const parts = stored.split('$');
+  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
+
+  const N = Number.parseInt(parts[1] ?? '', 10);
+  const r = Number.parseInt(parts[2] ?? '', 10);
+  const p = Number.parseInt(parts[3] ?? '', 10);
+  const salt = Buffer.from(parts[4] ?? '', 'base64');
+  const expected = Buffer.from(parts[5] ?? '', 'base64');
+  if (!Number.isFinite(N) || !Number.isFinite(r) || !Number.isFinite(p) || expected.length === 0) {
+    return false;
+  }
+
+  const actual = await scryptAsync(password.normalize('NFKC'), salt, expected.length, {
+    N,
+    r,
+    p,
+    maxmem: SCRYPT.maxmem,
+  });
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+/**
+ * Verifying a password for an email that does not exist still costs one scrypt
+ * run, so response time does not reveal which emails have accounts.
+ */
+const DUMMY_PASSWORD_HASH_PROMISE = hashPassword('pdf-studio-dummy-password');
+
+export async function burnPasswordCheck(password: string): Promise<void> {
+  await verifyPassword(password, await DUMMY_PASSWORD_HASH_PROMISE);
 }
 
 export type GoogleProfile = {
@@ -103,27 +160,107 @@ export type PublicUser = {
   pictureUrl: string | null;
 };
 
+type UserRow = {
+  id: string;
+  email: string;
+  name: string | null;
+  picture_url: string | null;
+};
+
+function toPublicUser(row: UserRow): PublicUser {
+  return { id: row.id, email: row.email, name: row.name, pictureUrl: row.picture_url };
+}
+
+/** Postgres unique-violation, used to turn duplicates into a friendly 409. */
+export function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === '23505'
+  );
+}
+
 export async function upsertUser(db: Db, profile: GoogleProfile): Promise<PublicUser> {
-  const result = await db.query<{
-    id: string;
-    email: string;
-    name: string | null;
-    picture_url: string | null;
-  }>(
-    `insert into app_user (google_sub, email, email_verified, name, picture_url)
-     values ($1, $2, $3, $4, $5)
-     on conflict (google_sub) do update set
-       email = excluded.email,
-       email_verified = excluded.email_verified,
-       name = excluded.name,
-       picture_url = excluded.picture_url,
-       last_seen_at = now()
-     returning id, email, name, picture_url`,
-    [profile.sub, profile.email, profile.emailVerified, profile.name, profile.pictureUrl],
+  let rows: UserRow[];
+  try {
+    const result = await db.query<UserRow>(
+      `insert into app_user (google_sub, email, email_verified, name, picture_url)
+       values ($1, $2, $3, $4, $5)
+       on conflict (google_sub) do update set
+         email = excluded.email,
+         email_verified = excluded.email_verified,
+         name = excluded.name,
+         picture_url = excluded.picture_url,
+         last_seen_at = now()
+       returning id, email, name, picture_url`,
+      [profile.sub, normalizeEmail(profile.email), profile.emailVerified, profile.name, profile.pictureUrl],
+    );
+    rows = result.rows;
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ApiError(
+        409,
+        'email_taken',
+        'อีเมลนี้มีบัญชีที่สมัครด้วยรหัสผ่านอยู่แล้ว — เข้าสู่ระบบด้วยอีเมลและรหัสผ่าน',
+      );
+    }
+    throw error;
+  }
+
+  const row = rows[0];
+  if (!row) throw new ApiError(500, 'internal', 'บันทึกบัญชีผู้ใช้ไม่สำเร็จ');
+  return toPublicUser(row);
+}
+
+export async function createPasswordUser(
+  db: Db,
+  input: { email: string; name: string | null; passwordHash: string },
+): Promise<PublicUser> {
+  let rows: UserRow[];
+  try {
+    const result = await db.query<UserRow>(
+      `insert into app_user (email, name, password_hash)
+       values ($1, $2, $3)
+       returning id, email, name, picture_url`,
+      [normalizeEmail(input.email), input.name, input.passwordHash],
+    );
+    rows = result.rows;
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ApiError(409, 'email_taken', 'อีเมลนี้ถูกสมัครไว้แล้ว — เข้าสู่ระบบแทน');
+    }
+    throw error;
+  }
+
+  const row = rows[0];
+  if (!row) throw new ApiError(500, 'internal', 'สร้างบัญชีไม่สำเร็จ');
+  return toPublicUser(row);
+}
+
+/** Sign-in needs the hash, but it never leaves this module. */
+export async function findUserByEmail(
+  db: Db,
+  email: string,
+): Promise<{ user: PublicUser; passwordHash: string | null } | null> {
+  const result = await db.query<UserRow & { password_hash: string | null }>(
+    `select id, email, name, picture_url, password_hash
+       from app_user
+      where lower(email) = $1`,
+    [normalizeEmail(email)],
   );
   const row = result.rows[0];
-  if (!row) throw new ApiError(500, 'internal', 'บันทึกบัญชีผู้ใช้ไม่สำเร็จ');
-  return { id: row.id, email: row.email, name: row.name, pictureUrl: row.picture_url };
+  if (!row) return null;
+  return { user: toPublicUser(row), passwordHash: row.password_hash };
+}
+
+export async function findUserById(db: Db, id: string): Promise<PublicUser | null> {
+  const result = await db.query<UserRow>(
+    'select id, email, name, picture_url from app_user where id = $1',
+    [id],
+  );
+  const row = result.rows[0];
+  return row ? toPublicUser(row) : null;
 }
 
 export async function createSession(

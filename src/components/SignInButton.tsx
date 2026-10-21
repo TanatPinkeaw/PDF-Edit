@@ -1,7 +1,7 @@
 import { useAccount } from '../state/account-context';
 
 export function SignInButton() {
-  const { user, authConfigured, busy, signIn, signOut, error } = useAccount();
+  const { user, busy, signOut } = useAccount();
 
   if (user) {
     return (
@@ -18,18 +18,8 @@ export function SignInButton() {
   }
 
   return (
-    <button
-      type="button"
-      className="button-secondary sign-in"
-      onClick={() => void signIn()}
-      disabled={busy || !authConfigured}
-      title={
-        authConfigured
-          ? 'เข้าสู่ระบบด้วย Google เพื่อใช้งานไม่จำกัด'
-          : (error ?? 'ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID ใน .env')
-      }
-    >
-      {busy ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบด้วย Google'}
-    </button>
+    <a className="button-secondary sign-in" href="#/signin" title="เข้าสู่ระบบเพื่อเก็บเครดิตไว้กับบัญชี">
+      เข้าสู่ระบบ
+    </a>
   );
 }

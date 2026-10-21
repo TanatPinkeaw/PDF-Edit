@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { PresetPicker } from '../components/PresetPicker';
-import { QuotaNotice } from '../components/QuotaNotice';
+import { CreditNotice } from '../components/CreditNotice';
 import { StampPreview } from '../components/StampPreview';
 import { ToolPage } from '../components/ToolPage';
 import { Workbench } from '../components/Workbench';
@@ -31,7 +31,7 @@ const POSITIONS = (Object.keys(POSITION_LABELS) as StampPosition[]).filter(
 
 export function PageNumbersPage() {
   const { session } = useWorkspace();
-  const { run, quotaMessage, clearQuotaMessage } = useToolRun();
+  const { run, creditMessage, clearCreditMessage } = useToolRun();
   const current = useCurrentDocument();
 
   const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
@@ -388,7 +388,7 @@ export function PageNumbersPage() {
               </p>
             </section>
 
-            <QuotaNotice message={quotaMessage} onDismiss={clearQuotaMessage} />
+            <CreditNotice message={creditMessage} onDismiss={clearCreditMessage} />
 
             <PresetPicker
               tool="page-numbers"

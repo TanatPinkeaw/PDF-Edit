@@ -1,0 +1,64 @@
+# PDF Studio stack for the HomeLab.
+#
+#   cp deploy/.env.deploy.example deploy/.env.deploy   # แก้รหัสผ่าน/โดเมน
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env.deploy up -d --build
+#   docker compose -f deploy/docker-compose.yml exec api node server/src/db/migrate.ts
+#
+# Paths are relative to this file, so the build context is the repository root.
+
+name: pdf-studio
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pdfstudio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ตั้ง POSTGRES_PASSWORD ใน .env.deploy}
+      POSTGRES_DB: ${POSTGRES_DB:-pdf_studio}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-pdfstudio} -d ${POSTGRES_DB:-pdf_studio}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pdfstudio}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pdf_studio}
+      API_HOST: 0.0.0.0
+      API_PORT: 8787
+      APP_ORIGIN: ${APP_ORIGIN:?ตั้ง APP_ORIGIN เช่น https://pdf.example.lan}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      ANON_DAILY_LIMIT: ${ANON_DAILY_LIMIT:-3}
+      SHARE_MAX_BYTES: ${SHARE_MAX_BYTES:-26214400}
+      SHARE_TTL_DAYS: ${SHARE_TTL_DAYS:-7}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-30}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    ports:
+      - '${WEB_PORT:-8080}:80'
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
+volumes:
+  db-data:
+
+networks:
+  internal:

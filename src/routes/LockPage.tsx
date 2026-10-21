@@ -1,6 +1,6 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 
-import { QuotaNotice } from '../components/QuotaNotice';
+import { CreditNotice } from '../components/CreditNotice';
 import { ToolPage } from '../components/ToolPage';
 import { Workbench } from '../components/Workbench';
 import { useCurrentDocument } from '../hooks/useCurrentDocument';
@@ -50,7 +50,7 @@ type UnlockFile = {
 
 export function LockPage() {
   const { session } = useWorkspace();
-  const { run, quotaMessage, clearQuotaMessage } = useToolRun();
+  const { run, creditMessage, clearCreditMessage } = useToolRun();
   const current = useCurrentDocument();
   const [tab, setTab] = useState<Tab>('protect');
 
@@ -277,7 +277,7 @@ export function LockPage() {
                 </p>
               </section>
 
-              <QuotaNotice message={quotaMessage} onDismiss={clearQuotaMessage} />
+              <CreditNotice message={creditMessage} onDismiss={clearCreditMessage} />
             </>
           }
         />
@@ -369,7 +369,7 @@ export function LockPage() {
           </section>
 
           <aside className="lock-side">
-            <QuotaNotice message={quotaMessage} onDismiss={clearQuotaMessage} />
+            <CreditNotice message={creditMessage} onDismiss={clearCreditMessage} />
             <section className="panel">
               <h2 className="panel-title">ทำไมต้องปลดล็อก?</h2>
               <p className="hint">

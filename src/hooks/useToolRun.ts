@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { downloadBytes, mimeForName } from '../lib/download';
 import { PdfError } from '../lib/pdf-ops';
 import {
-  QuotaExceededError,
+  CreditsExceededError,
   completeRun,
   failRun,
   startRun,
@@ -36,8 +36,8 @@ export type ToolRun = {
     work: () => Promise<ToolOutput>,
     input?: RunInput,
   ) => Promise<ToolOutput | null>;
-  quotaMessage: string | null;
-  clearQuotaMessage: () => void;
+  creditMessage: string | null;
+  clearCreditMessage: () => void;
 };
 
 function describe(error: unknown): string {
@@ -47,12 +47,12 @@ function describe(error: unknown): string {
 }
 
 /**
- * Wraps tool actions with quota + history. Messages go to the shared status
- * toast; quota problems also stay on the page so the sign-in CTA is visible.
+ * Wraps tool actions with credits + history. Messages go to the shared status
+ * toast; an empty wallet also stays on the page so the top-up CTA is visible.
  */
 export function useToolRun(): ToolRun {
   const { session } = useWorkspace();
-  const [quotaMessage, setQuotaMessage] = useState<string | null>(null);
+  const [creditMessage, setQuotaMessage] = useState<string | null>(null);
 
   const track = useCallback<ToolRun['track']>(
     (tool, params, work, input) =>
@@ -93,7 +93,7 @@ export function useToolRun(): ToolRun {
           session.notify('info', `ดาวน์โหลด ${output.name} แล้ว`);
           return output;
         } catch (error) {
-          if (error instanceof QuotaExceededError) {
+          if (error instanceof CreditsExceededError) {
             setQuotaMessage(error.message);
             session.notify('error', error.message);
           } else {
@@ -108,7 +108,7 @@ export function useToolRun(): ToolRun {
   return {
     run,
     track,
-    quotaMessage,
-    clearQuotaMessage: useCallback(() => setQuotaMessage(null), []),
+    creditMessage,
+    clearCreditMessage: useCallback(() => setQuotaMessage(null), []),
   };
 }

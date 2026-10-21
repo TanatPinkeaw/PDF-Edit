@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import { PresetPicker } from '../components/PresetPicker';
-import { QuotaNotice } from '../components/QuotaNotice';
+import { CreditNotice } from '../components/CreditNotice';
 import { StampPreview } from '../components/StampPreview';
 import { ToolPage } from '../components/ToolPage';
 import { Workbench } from '../components/Workbench';
@@ -39,7 +39,7 @@ function imageTypeOf(file: File): 'png' | 'jpeg' | null {
 
 export function WatermarkPage() {
   const { session } = useWorkspace();
-  const { run, quotaMessage, clearQuotaMessage } = useToolRun();
+  const { run, creditMessage, clearCreditMessage } = useToolRun();
   const current = useCurrentDocument();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -450,7 +450,7 @@ export function WatermarkPage() {
               </p>
             </section>
 
-            <QuotaNotice message={quotaMessage} onDismiss={clearQuotaMessage} />
+            <CreditNotice message={creditMessage} onDismiss={clearCreditMessage} />
 
             <PresetPicker
               tool="watermark"

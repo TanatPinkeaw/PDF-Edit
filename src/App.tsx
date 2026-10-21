@@ -1,19 +1,26 @@
 import { useEffect, type ReactNode } from 'react';
 
 import { PasswordDialog } from './components/PasswordDialog';
-import { QuotaBadge } from './components/QuotaBadge';
+import { CreditBadge } from './components/CreditBadge';
 import { ShareStrip } from './components/ShareStrip';
 import { SignInButton } from './components/SignInButton';
 import { useRoute } from './lib/router';
 import { READY_TOOLS } from './lib/tools';
 import { ActivityPage } from './routes/ActivityPage';
+import { AuthPage } from './routes/AuthPage';
+import { CompressPage } from './routes/CompressPage';
+import { ConvertPage } from './routes/ConvertPage';
+import { CropPage } from './routes/CropPage';
+import { DiagnosticsPage } from './routes/DiagnosticsPage';
 import { HomePage } from './routes/HomePage';
+import { JpgToPdfPage } from './routes/JpgToPdfPage';
 import { LockPage } from './routes/LockPage';
 import { MergePage } from './routes/MergePage';
 import { OrganizePage } from './routes/OrganizePage';
 import { PageNumbersPage } from './routes/PageNumbersPage';
 import { RotatePage } from './routes/RotatePage';
 import { SharePage } from './routes/SharePage';
+import { SignPage } from './routes/SignPage';
 import { WatermarkPage } from './routes/WatermarkPage';
 import { AccountProvider } from './state/account-context';
 import { WorkspaceProvider, useWorkspace } from './state/workspace-context';
@@ -66,8 +73,35 @@ function Shell() {
     case 'lock':
       page = <LockPage />;
       break;
+    case 'jpg-to-pdf':
+      page = <JpgToPdfPage />;
+      break;
+    case 'sign':
+      page = <SignPage />;
+      break;
+    case 'crop':
+      page = <CropPage />;
+      break;
+    case 'compress':
+      page = <CompressPage />;
+      break;
+    case 'word-to-pdf':
+      page = <ConvertPage kind="word-to-pdf" />;
+      break;
+    case 'pdf-to-word':
+      page = <ConvertPage kind="pdf-to-word" />;
+      break;
     case 'activity':
       page = <ActivityPage />;
+      break;
+    case 'diagnostics':
+      page = <DiagnosticsPage />;
+      break;
+    case 'signin':
+      page = <AuthPage mode="signin" />;
+      break;
+    case 'signup':
+      page = <AuthPage mode="signup" />;
       break;
     case 's':
       page = shareToken ? <SharePage token={shareToken} /> : <NotFoundPage />;
@@ -80,9 +114,14 @@ function Shell() {
     <div className="app">
       <header className="app-header">
         <a className="brand" href="#/">
-          <span className="brand-mark" aria-hidden="true">
-            PDF
-          </span>
+          <img
+            className="brand-mark"
+            src={`${import.meta.env.BASE_URL}brand/logo.webp`}
+            alt=""
+            width={46}
+            height={46}
+            decoding="async"
+          />
           <div>
             <h1>PDF Studio</h1>
             <p className="brand-sub">เครื่องมือ PDF ทั้งหมดทำงานในเบราว์เซอร์</p>
@@ -99,7 +138,7 @@ function Shell() {
         </nav>
 
         <div className="header-actions">
-          <QuotaBadge />
+          <CreditBadge />
           <SignInButton />
         </div>
       </header>
@@ -108,7 +147,10 @@ function Shell() {
 
       <footer className="app-footer">
         <span>ไฟล์ประมวลผลในเครื่องคุณ · เซิร์ฟเวอร์เก็บเฉพาะ metadata ของงาน</span>
-        <a href="#/activity">จัดการข้อมูลของฉัน</a>
+        <span className="footer-links">
+          <a href="#/diagnostics">ตรวจระบบ</a>
+          <a href="#/activity">จัดการข้อมูลของฉัน</a>
+        </span>
       </footer>
 
       <ShareStrip />

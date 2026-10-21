@@ -1,24 +1,23 @@
 /**
- * Every tool run is recorded so the history page and the anonymous quota work.
+ * Every tool run is recorded so the history page and the credit wallet work.
  *
  * Recording is best-effort: if the API is unreachable the PDF work still
- * completes, because the browser does all of it. The one exception is a 429 —
- * that is a deliberate product gate and the caller must show the sign-in CTA.
+ * completes, because the browser does all of it. The one exception is a 402 —
+ * an empty wallet is a deliberate product gate and the caller must show the
+ * top-up CTA.
  */
 
-import { ApiError, apiFetch, isQuota, type Quota } from './api';
+import { ApiError, apiFetch, isCredits, type Credits } from './api';
 
-export const QUOTA_EVENT = 'pdfstudio:quota';
+export const CREDITS_EVENT = 'pdfstudio:credits';
 
-export class QuotaExceededError extends Error {
-  readonly quota: Quota | null;
-  readonly resetAt: string | null;
+export class CreditsExceededError extends Error {
+  readonly credits: Credits | null;
 
-  constructor(message: string, quota: Quota | null) {
+  constructor(message: string, credits: Credits | null) {
     super(message);
-    this.name = 'QuotaExceededError';
-    this.quota = quota;
-    this.resetAt = quota?.resetAt ?? null;
+    this.name = 'CreditsExceededError';
+    this.credits = credits;
   }
 }
 
@@ -34,8 +33,8 @@ export type RunInput = {
   bytes?: number;
 };
 
-export function announceQuota(quota: Quota): void {
-  window.dispatchEvent(new CustomEvent<Quota>(QUOTA_EVENT, { detail: quota }));
+export function announceCredits(credits: Credits): void {
+  window.dispatchEvent(new CustomEvent<Credits>(CREDITS_EVENT, { detail: credits }));
 }
 
 function newClientRunId(): string {
@@ -44,13 +43,13 @@ function newClientRunId(): string {
 }
 
 /**
- * The server sends `{ error: { code, message, quota } }`, so the quota sits one
- * level deeper than the rest of the details.
+ * The server sends `{ error: { code, message, credits } }`, so the balance sits
+ * one level deeper than the rest of the details.
  */
-function quotaFrom(error: ApiError): Quota | null {
-  const details = error.details as { quota?: unknown; error?: { quota?: unknown } };
-  const quota = details.error?.quota ?? details.quota;
-  return isQuota(quota) ? quota : null;
+function creditsFrom(error: ApiError): Credits | null {
+  const details = error.details as { credits?: unknown; error?: { credits?: unknown } };
+  const credits = details.error?.credits ?? details.credits;
+  return isCredits(credits) ? credits : null;
 }
 
 export async function beginRun(
@@ -59,7 +58,7 @@ export async function beginRun(
   input?: RunInput,
 ): Promise<string | null> {
   try {
-    const response = await apiFetch<{ run: { id: string }; quota: Quota }>('/api/runs', {
+    const response = await apiFetch<{ run: { id: string }; credits: Credits }>('/api/runs', {
       method: 'POST',
       body: {
         tool,
@@ -68,14 +67,14 @@ export async function beginRun(
         clientRunId: newClientRunId(),
       },
     });
-    announceQuota(response.quota);
+    if (isCredits(response.credits)) announceCredits(response.credits);
     return response.run.id;
   } catch (error) {
-    if (error instanceof ApiError && error.code === 'quota_exceeded') {
-      const quota = quotaFrom(error);
-      // The refusal carries the authoritative window; reflect it immediately.
-      if (quota) announceQuota(quota);
-      throw new QuotaExceededError(error.message, quota);
+    if (error instanceof ApiError && error.code === 'insufficient_credits') {
+      const credits = creditsFrom(error);
+      // Reflect the empty wallet right away when the server sends it.
+      if (credits) announceCredits(credits);
+      throw new CreditsExceededError(error.message, credits);
     }
     console.warn('บันทึกประวัติการใช้งานไม่ได้ — ทำงานต่อในเครื่อง', error);
     return null;
@@ -84,14 +83,14 @@ export async function beginRun(
 
 export async function completeRun(runId: string, output: ToolOutput): Promise<void> {
   try {
-    const response = await apiFetch<{ quota: Quota }>(`/api/runs/${runId}`, {
+    const response = await apiFetch<{ credits: Credits }>(`/api/runs/${runId}`, {
       method: 'PATCH',
       body: {
         status: 'succeeded',
         output: { name: output.name, bytes: output.bytes.byteLength },
       },
     });
-    if (response.quota) announceQuota(response.quota);
+    if (isCredits(response.credits)) announceCredits(response.credits);
   } catch (error) {
     console.warn('อัปเดตสถานะงานไม่สำเร็จ', error);
   }
@@ -99,7 +98,7 @@ export async function completeRun(runId: string, output: ToolOutput): Promise<vo
 
 export async function failRun(runId: string, error: unknown): Promise<void> {
   try {
-    await apiFetch<{ quota: Quota }>(`/api/runs/${runId}`, {
+    const response = await apiFetch<{ credits: Credits }>(`/api/runs/${runId}`, {
       method: 'PATCH',
       body: {
         status: 'failed',
@@ -109,6 +108,7 @@ export async function failRun(runId: string, error: unknown): Promise<void> {
         },
       },
     });
+    if (isCredits(response.credits)) announceCredits(response.credits);
   } catch (apiError) {
     console.warn('อัปเดตสถานะงานไม่สำเร็จ', apiError);
   }
@@ -117,12 +117,12 @@ export async function failRun(runId: string, error: unknown): Promise<void> {
 export type RunStart =
   /** `runId` is null when the API is unreachable; the work still goes ahead. */
   | { proceed: true; runId: string | null }
-  | { proceed: false; error: QuotaExceededError };
+  | { proceed: false; error: CreditsExceededError };
 
 /**
  * Decides whether a tool action may start.
  *
- * A quota refusal stops the work; an unreachable API does not, because the
+ * An empty wallet stops the work; an unreachable API does not, because the
  * browser does all the PDF work — only the history row is lost.
  */
 export async function startRun(
@@ -133,16 +133,16 @@ export async function startRun(
   try {
     return { proceed: true, runId: await beginRun(tool, params, input) };
   } catch (error) {
-    if (error instanceof QuotaExceededError) return { proceed: false, error };
+    if (error instanceof CreditsExceededError) return { proceed: false, error };
     console.warn('เริ่มบันทึกงานไม่ได้ — ทำงานต่อในเครื่อง', error);
     return { proceed: true, runId: null };
   }
 }
 
 /**
- * Wraps a tool action: checks the quota, records the run, and reports the
- * outcome. Throws QuotaExceededError before doing any work when the anonymous
- * allowance is used up.
+ * Wraps a tool action: charges a credit, records the run, and reports the
+ * outcome. Throws CreditsExceededError before doing any work when the wallet is
+ * empty.
  */
 export async function trackRun<T extends ToolOutput>(
   tool: string,

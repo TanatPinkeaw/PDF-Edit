@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import { ToolPage } from '../components/ToolPage';
-import { apiFetch, type RunRecord } from '../lib/api';
+import { apiFetch, type CreditReason, type RunRecord } from '../lib/api';
+import { downloadBytes } from '../lib/download';
+import { historyFileName, runsToCsv, runsToJson } from '../lib/history-export';
 import { saveReplay } from '../lib/replay';
 import { navigate } from '../lib/router';
 import { formatBytes } from '../lib/share';
@@ -18,6 +20,16 @@ const STATUS_LABELS: Record<RunRecord['status'], string> = {
 
 /** Only tools whose settings can be restored from stored params. */
 const REPLAYABLE = new Set(['rotate', 'page-numbers', 'watermark']);
+
+const REASON_LABELS: Record<CreditReason, string> = {
+  anon_grant: 'เครดิตทดลอง',
+  signup_bonus: 'โบนัสสมัครสมาชิก',
+  run: 'ใช้กับงาน',
+  refund: 'คืนเครดิต',
+  redeem: 'ใช้โค้ด',
+  admin: 'แอดมินเติมให้',
+  merge: 'ยกจากโหมดทดลอง',
+};
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString('th-TH', {
@@ -45,17 +57,19 @@ export function ActivityPage() {
   const {
     status: accountStatus,
     user,
-    quota,
-    authConfigured,
-    signIn,
+    credits,
+    recentEntries,
     busy: accountBusy,
     refresh,
+    redeem,
     deleteEverything,
   } = useAccount();
 
   const [runs, setRuns] = useState<RunRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('all');
+  const [code, setCode] = useState('');
+  const [codeResult, setCodeResult] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -111,6 +125,16 @@ export function ActivityPage() {
     }
   };
 
+  const download = (format: 'csv' | 'json') => {
+    // Export exactly what is on screen, so the tool filter applies too.
+    const content = format === 'csv' ? runsToCsv(visible) : runsToJson(visible);
+    downloadBytes(
+      historyFileName(format),
+      new TextEncoder().encode(content),
+      format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json;charset=utf-8',
+    );
+  };
+
   const rerun = (run: RunRecord) => {
     const tool = READY_TOOLS.find((entry) => entry.slug === run.tool && entry.href);
     if (!tool?.href) return;
@@ -118,34 +142,83 @@ export function ActivityPage() {
     navigate(tool.href.replace('#', ''));
   };
 
+  const submitCode = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (code.trim() === '') return;
+    setCodeResult(null);
+    try {
+      const granted = await redeem(code.trim());
+      setCode('');
+      setCodeResult({ tone: 'ok', text: `เติม ${granted} เครดิตแล้ว` });
+    } catch (redeemError) {
+      setCodeResult({
+        tone: 'error',
+        text: redeemError instanceof Error ? redeemError.message : 'ใช้โค้ดไม่สำเร็จ',
+      });
+    }
+  };
+
   return (
     <ToolPage
       title="ประวัติการใช้งาน"
       description="ทุกครั้งที่รันเครื่องมือจะถูกบันทึกใน PostgreSQL — ไม่มีเนื้อหาไฟล์ เก็บเฉพาะ metadata"
       actions={
-        <button type="button" className="button-secondary" onClick={() => void load()} disabled={busy}>
-          โหลดใหม่
-        </button>
+        <>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => {
+              void load();
+              // Balances can change outside this tab (admin top-up), so the
+              // refresh button reloads them too.
+              void refresh();
+            }}
+            disabled={busy}
+          >
+            โหลดใหม่
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => download('csv')}
+            disabled={visible.length === 0}
+            title="ดาวน์โหลดรายการที่แสดงอยู่เป็น CSV (เปิดใน Excel/Sheets ได้)"
+          >
+            ดาวน์โหลด CSV
+          </button>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => download('json')}
+            disabled={visible.length === 0}
+            title="ดาวน์โหลดรายการที่แสดงอยู่เป็น JSON (ครบทุกฟิลด์)"
+          >
+            ดาวน์โหลด JSON
+          </button>
+        </>
       }
     >
       <div className="activity">
         <section className="panel activity-summary">
           <div className="activity-account">
             <div>
-              <span className="field-label">พื้นที่ทำงาน</span>
+              <span className="field-label">บัญชี</span>
               <p className="activity-account-name">
-                {user ? user.email : `ไม่ระบุตัวตน · ${quota.unlimited ? 'ไม่จำกัด' : `${quota.used}/${quota.limit ?? 3} ครั้งใน 24 ชม.`}`}
+                {user ? user.email : 'ไม่ระบุตัวตน (เครดิตผูกกับเบราว์เซอร์นี้)'}
               </p>
             </div>
+            <p className="credit-balance-line">
+              <strong>{credits.balance}</strong> เครดิต
+            </p>
             {!user && (
-              <button
-                type="button"
-                className="button-primary"
-                onClick={() => void signIn()}
-                disabled={accountBusy || !authConfigured}
-              >
-                {authConfigured ? 'เข้าสู่ระบบด้วย Google' : 'ยังไม่ได้ตั้งค่า Google Client ID'}
-              </button>
+              <div className="activity-auth">
+                <a className="button-primary" href="#/signup">
+                  สมัครสมาชิก
+                </a>
+                <a className="button-secondary" href="#/signin">
+                  เข้าสู่ระบบ
+                </a>
+              </div>
             )}
           </div>
 
@@ -194,6 +267,60 @@ export function ActivityPage() {
           </div>
         </section>
 
+        <section className="panel credit-panel">
+          <header className="panel-head">
+            <h2>เครดิต</h2>
+            <span className="credit-balance">{credits.balance} เครดิต</span>
+          </header>
+          <p className="hint">
+            ทุกครั้งที่รันเครื่องมือจะใช้ 1 เครดิต และงานที่ล้มเหลวหรือค้างเกิน 10 นาทีจะได้คืน
+            {user ? '' : ` · โหมดทดลองได้ ${credits.allowance ?? credits.balance} เครดิตแบบครั้งเดียว`}
+          </p>
+
+          <form className="redeem-form" onSubmit={(event) => void submitCode(event)}>
+            <label className="field">
+              <span className="field-label">โค้ดเติมเครดิต</span>
+              <input
+                className="range-input"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                placeholder="XXXX-XXXX-XXXX"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={40}
+              />
+            </label>
+            <button
+              type="submit"
+              className="button-secondary"
+              disabled={accountBusy || code.trim() === ''}
+            >
+              ใช้โค้ด
+            </button>
+          </form>
+          {codeResult && (
+            <p className={codeResult.tone === 'ok' ? 'credit-ok' : 'form-error'}>{codeResult.text}</p>
+          )}
+
+          <h3 className="credit-subhead">รายการเดินบัญชี</h3>
+          {recentEntries.length === 0 ? (
+            <p className="hint">ยังไม่มีรายการเดินบัญชี</p>
+          ) : (
+            <ul className="credit-list">
+              {recentEntries.map((entry) => (
+                <li key={entry.id} className="credit-row">
+                  <span>{REASON_LABELS[entry.reason]}</span>
+                  <span className="credit-delta" data-negative={entry.delta < 0 || undefined}>
+                    {entry.delta > 0 ? `+${entry.delta}` : entry.delta}
+                  </span>
+                  <span className="credit-time">{formatTime(entry.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="hint">ยังไม่มีระบบจ่ายเงิน — ขอโค้ดจากผู้ดูแล หรือให้แอดมินเติมผ่าน CLI</p>
+        </section>
+
         {accountStatus === 'offline' && (
           <p className="form-error">เชื่อมต่อ API ไม่ได้ — ประวัติจะแสดงได้เมื่อเซิร์ฟเวอร์พร้อม</p>
         )}
@@ -201,7 +328,7 @@ export function ActivityPage() {
 
         <section className="panel">
           <header className="panel-head">
-            <h2>รายการล่าสุด</h2>
+            <h2>งานล่าสุด</h2>
             <div className="activity-filter">
               <label className="field-label" htmlFor="activity-filter">
                 เครื่องมือ
@@ -220,6 +347,11 @@ export function ActivityPage() {
               </select>
             </div>
           </header>
+
+          <p className="hint">
+            ดาวน์โหลดได้เฉพาะรายการที่แสดงอยู่ (กรองแล้ว {visible.length} รายการ) — ประวัติเก็บเฉพาะ
+            metadata ไม่มีไฟล์ PDF จึงโหลดไฟล์ผลลัพธ์ย้อนหลังไม่ได้
+          </p>
 
           {runs === null ? (
             <p className="hint">กำลังโหลด…</p>

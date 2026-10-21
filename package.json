@@ -14,7 +14,10 @@
     "sample": "node scripts/make-sample.mjs",
     "db:create": "node --env-file-if-exists=.env server/src/db/create.ts",
     "db:migrate": "node --env-file-if-exists=.env server/src/db/migrate.ts",
-    "db:reset": "node --env-file-if-exists=.env server/src/db/reset.ts"
+    "db:reset": "node --env-file-if-exists=.env server/src/db/reset.ts",
+    "credits:grant": "node --env-file-if-exists=.env server/src/cli/credits.ts grant",
+    "credits:codes": "node --env-file-if-exists=.env server/src/cli/credits.ts codes",
+    "credits:balance": "node --env-file-if-exists=.env server/src/cli/credits.ts balance"
   },
   "dependencies": {
     "@cantoo/fontkit": "2.0.12",

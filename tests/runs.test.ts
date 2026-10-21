@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { QUOTA_EVENT, QuotaExceededError, startRun } from '../src/lib/runs';
+import { CREDITS_EVENT, CreditsExceededError, startRun } from '../src/lib/runs';
 
-const quota = { unlimited: false, limit: 3, used: 1, remaining: 2, resetAt: null };
+const credits = { balance: 2, allowance: 3, member: false };
+const emptyCredits = { balance: 0, allowance: 3, member: false };
 
 const realFetch = globalThis.fetch;
 
@@ -24,24 +25,32 @@ afterEach(() => {
 });
 
 describe('startRun', () => {
-  it('proceeds with the run id when the API records it', async () => {
+  it('proceeds with the run id and announces the new balance', async () => {
     const dispatch = vi.fn();
     (globalThis as { window?: unknown }).window = { dispatchEvent: dispatch };
-    stubFetch(() => jsonResponse({ run: { id: 'run-1' }, quota }));
+    stubFetch(() => jsonResponse({ run: { id: 'run-1' }, credits }));
 
     const started = await startRun('organize', { action: 'download' });
 
     expect(started).toEqual({ proceed: true, runId: 'run-1' });
-    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: QUOTA_EVENT, detail: quota }));
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: CREDITS_EVENT, detail: credits }),
+    );
   });
 
-  it('refuses to start when the anonymous quota is used up', async () => {
+  it('refuses to start when the wallet is empty', async () => {
     const dispatch = vi.fn();
     (globalThis as { window?: unknown }).window = { dispatchEvent: dispatch };
     stubFetch(() =>
       jsonResponse(
-        { error: { code: 'quota_exceeded', message: 'ใช้ครบ 3 ครั้งแล้ว', quota } },
-        429,
+        {
+          error: {
+            code: 'insufficient_credits',
+            message: 'เครดิตหมดแล้ว — เติมเครดิตหรือสมัครสมาชิก',
+            credits: emptyCredits,
+          },
+        },
+        402,
       ),
     );
 
@@ -49,12 +58,13 @@ describe('startRun', () => {
 
     expect(started.proceed).toBe(false);
     if (started.proceed) throw new Error('unreachable');
-    expect(started.error).toBeInstanceOf(QuotaExceededError);
-    expect(started.error.message).toBe('ใช้ครบ 3 ครั้งแล้ว');
-    expect(started.error.quota).toEqual(quota);
-    expect(started.error.resetAt).toBeNull();
-    // The badge learns the real window from the refusal itself.
-    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ detail: quota }));
+    expect(started.error).toBeInstanceOf(CreditsExceededError);
+    expect(started.error.message).toBe('เครดิตหมดแล้ว — เติมเครดิตหรือสมัครสมาชิก');
+    expect(started.error.credits).toEqual(emptyCredits);
+    // The badge learns the empty balance from the refusal itself.
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ detail: emptyCredits }),
+    );
   });
 
   it('still runs the browser-only work when the API is unreachable', async () => {

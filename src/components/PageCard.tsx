@@ -110,7 +110,10 @@ export function PageCard({
           {thumb ? (
             <img src={thumb} alt="" draggable={false} />
           ) : (
-            <span className={thumbFailed ? 'thumb-failed' : 'thumb-skeleton'}>
+            <span
+              className={thumbFailed ? 'thumb-failed' : 'thumb-skeleton'}
+              title={thumbFailed ? (thumbnails.failure?.detail ?? undefined) : undefined}
+            >
               {thumbFailed ? 'แสดงตัวอย่างไม่ได้' : ''}
             </span>
           )}

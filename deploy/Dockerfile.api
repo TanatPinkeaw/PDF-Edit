@@ -1,0 +1,26 @@
+# Runs the Fastify API. Node 24 executes the TypeScript sources directly.
+# Build from the repository root: docker build -f deploy/Dockerfile.api .
+
+FROM node:24-alpine
+WORKDIR /app
+RUN corepack enable
+
+# Headless LibreOffice powers /api/convert/*. `font-noto` keeps Thai documents
+# from falling back to empty boxes; add font packages if you need others.
+RUN apk add --no-cache libreoffice-writer font-noto
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --prod --frozen-lockfile
+
+COPY server ./server
+
+ENV NODE_ENV=production
+ENV API_HOST=0.0.0.0
+ENV API_PORT=8787
+ENV SOFFICE_PATH=/usr/bin/soffice
+
+EXPOSE 8787
+HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
+  CMD wget -qO- http://127.0.0.1:8787/api/health >/dev/null || exit 1
+
+CMD ["node", "server/src/index.ts"]

@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 
 import { requireWorkspace, resolveContext, type RequestContext } from '../auth.ts';
+import { getCredits, insertChargedRun, openWallet, refundRunCredits } from '../credits.ts';
 import type { Db } from '../db.ts';
 import type { Env } from '../env.ts';
 import { ApiError, badRequest, isPlainObject, readObjectBody, readString } from '../http.ts';
-import { assertQuota, getQuota } from '../quota.ts';
 
 const MAX_PARAMS_BYTES = 8_000;
 const STALE_RUN_MINUTES = 10;
@@ -23,6 +23,7 @@ export type JobRow = {
   error_code: string | null;
   error_message: string | null;
   duration_ms: number | null;
+  credit_wallet_id: string | null;
   started_at: Date;
   finished_at: Date | null;
 };
@@ -60,24 +61,52 @@ function scopeFilter(
   return { sql: `j.workspace_id = $${startIndex}`, values: [requireWorkspace(context)] };
 }
 
+/**
+ * Runs left `running` by a closed tab are marked abandoned and refunded, so a
+ * crash does not silently eat a credit.
+ */
 async function markStaleRunsAbandoned(db: Db, context: RequestContext): Promise<void> {
   const filter = scopeFilter(context);
+  const stale = await db.query<{ id: string; credit_wallet_id: string | null }>(
+    `select j.id, j.credit_wallet_id
+       from job_run j
+       join workspace w on w.id = j.workspace_id
+      where j.status = 'running'
+        and j.started_at < now() - interval '${STALE_RUN_MINUTES} minutes'
+        and ${filter.sql}`,
+    filter.values,
+  );
+  if (stale.rows.length === 0) return;
+
   await db.query(
     `update job_run j
         set status = 'abandoned',
             finished_at = now(),
             duration_ms = greatest(0, (extract(epoch from (now() - j.started_at)) * 1000)::int)
-       from workspace w
-      where w.id = j.workspace_id
-        and j.status = 'running'
-        and j.started_at < now() - interval '${STALE_RUN_MINUTES} minutes'
-        and ${filter.sql}`,
-    filter.values,
+      where j.id = any($1::uuid[])`,
+    [stale.rows.map((row) => row.id)],
   );
+
+  for (const row of stale.rows) {
+    if (row.credit_wallet_id) {
+      await refundRunCredits(db, row.credit_wallet_id, row.id, 'งานค้างเกิน 10 นาที');
+    }
+  }
 }
 
 export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env }): void {
   const { db, env } = deps;
+
+  const grantFor = (context: RequestContext) =>
+    context.user
+      ? { credits: env.signupBonusCredits, reason: 'signup_bonus' as const }
+      : { credits: env.anonCredits, reason: 'anon_grant' as const };
+
+  const creditsFor = (context: RequestContext) =>
+    getCredits(db, context, {
+      signupBonus: env.signupBonusCredits,
+      anonCredits: env.anonCredits,
+    });
 
   app.post('/api/runs', async (request, reply) => {
     const context = await resolveContext(db, request);
@@ -93,6 +122,7 @@ export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env
       throw badRequest(`params ใหญ่เกิน ${MAX_PARAMS_BYTES} ไบต์`);
     }
 
+    // Retrying a request must not charge a second credit for the same run.
     if (clientRunId) {
       const existing = await db.query<JobRow>(
         `select j.* from job_run j where j.workspace_id = $1 and j.client_run_id = $2`,
@@ -100,31 +130,36 @@ export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env
       );
       const row = existing.rows[0];
       if (row) {
-        return { run: serializeRun(row), quota: await getQuota(db, context, env.anonDailyLimit) };
+        return { run: serializeRun(row), credits: await creditsFor(context) };
       }
     }
 
-    await assertQuota(db, context, env.anonDailyLimit);
+    const wallet = await openWallet(db, context, grantFor(context));
 
-    const inserted = await db.query<JobRow>(
-      `insert into job_run (workspace_id, tool, input_name, input_pages, input_bytes, params, client_run_id)
-       values ($1, $2, $3, $4, $5, $6, $7)
-       returning *`,
-      [
-        workspaceId,
-        tool,
-        readString(input, 'name', { maxLength: 255 }),
-        typeof input.pages === 'number' && Number.isFinite(input.pages) ? Math.max(0, Math.round(input.pages)) : null,
-        typeof input.bytes === 'number' && Number.isFinite(input.bytes) ? Math.max(0, Math.round(input.bytes)) : null,
-        JSON.stringify(params),
-        clientRunId,
-      ],
-    );
+    const { run } = await insertChargedRun(db, wallet.id, async (client) => {
+      const inserted = await client.query<JobRow>(
+        `insert into job_run
+           (workspace_id, credit_wallet_id, tool, input_name, input_pages, input_bytes, params, client_run_id)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
+         returning *`,
+        [
+          workspaceId,
+          wallet.id,
+          tool,
+          readString(input, 'name', { maxLength: 255 }),
+          typeof input.pages === 'number' && Number.isFinite(input.pages) ? Math.max(0, Math.round(input.pages)) : null,
+          typeof input.bytes === 'number' && Number.isFinite(input.bytes) ? Math.max(0, Math.round(input.bytes)) : null,
+          JSON.stringify(params),
+          clientRunId,
+        ],
+      );
+      const row = inserted.rows[0];
+      if (!row) throw new ApiError(500, 'internal', 'บันทึกงานไม่สำเร็จ');
+      return { run: row, runId: row.id };
+    });
 
-    const row = inserted.rows[0];
-    if (!row) throw new ApiError(500, 'internal', 'บันทึกงานไม่สำเร็จ');
     reply.code(201);
-    return { run: serializeRun(row), quota: await getQuota(db, context, env.anonDailyLimit) };
+    return { run: serializeRun(run), credits: await creditsFor(context) };
   });
 
   app.patch('/api/runs/:id', async (request) => {
@@ -173,7 +208,11 @@ export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env
     const row = updated.rows[0];
     if (!row) throw new ApiError(404, 'not_found', 'ไม่พบงานนี้ในพื้นที่ทำงานของคุณ');
 
-    return { run: serializeRun(row), quota: await getQuota(db, context, env.anonDailyLimit) };
+    if (!succeeded && row.credit_wallet_id) {
+      await refundRunCredits(db, row.credit_wallet_id, row.id, 'งานไม่สำเร็จ — คืนเครดิต');
+    }
+
+    return { run: serializeRun(row), credits: await creditsFor(context) };
   });
 
   app.get('/api/runs', async (request) => {
@@ -195,7 +234,7 @@ export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env
 
     return {
       runs: result.rows.map(serializeRun),
-      quota: await getQuota(db, context, env.anonDailyLimit),
+      credits: await creditsFor(context),
     };
   });
 

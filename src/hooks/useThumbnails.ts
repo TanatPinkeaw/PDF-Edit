@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 
-import { pdfjs } from '../lib/pdfjs';
+import { PdfRenderError, loadPdfForRendering } from '../lib/pdfjs';
 
 const THUMB_WIDTH = 240;
 const MAX_CONCURRENT_RENDERS = 2;
@@ -57,15 +57,39 @@ async function renderPage(
 
 export type ThumbnailLoader = (srcIndex: number, extraRotation?: number) => Promise<string>;
 
+export type ThumbnailFailure = {
+  /** Short user-facing reason, e.g. "เปิดตัวอย่างเอกสารไม่สำเร็จ". */
+  message: string;
+  /** Technical cause for the diagnostics panel. */
+  detail: string;
+};
+
 export type Thumbnails = {
   load: ThumbnailLoader;
   /** Bumped whenever the underlying document changes, so cards re-render. */
   version: number;
+  /** Set when the document could not be opened at all. */
+  failure: ThumbnailFailure | null;
+  /** Re-opens the document; called by the retry buttons. */
+  reload: () => void;
 };
+
+function toFailure(error: unknown): ThumbnailFailure {
+  if (error instanceof PdfRenderError) {
+    return { message: error.message, detail: error.detail };
+  }
+  if (error instanceof Error) {
+    return { message: 'เปิดตัวอย่างเอกสารไม่สำเร็จ', detail: error.message };
+  }
+  return { message: 'เปิดตัวอย่างเอกสารไม่สำเร็จ', detail: String(error) };
+}
 
 export function useThumbnails(bytes: Uint8Array | null): Thumbnails {
   const [version, setVersion] = useState(0);
+  const [attempt, setAttempt] = useState(0);
+  const [failure, setFailure] = useState<ThumbnailFailure | null>(null);
   const docRef = useRef<PDFDocumentProxy | null>(null);
+  const destroyRef = useRef<(() => Promise<void>) | null>(null);
   const readyRef = useRef<Promise<PDFDocumentProxy | null>>(Promise.resolve(null));
   const cache = useRef(new Map<string, string>());
   const inflight = useRef(new Map<string, Promise<string>>());
@@ -77,6 +101,8 @@ export function useThumbnails(bytes: Uint8Array | null): Thumbnails {
     cache.current.clear();
     inflight.current.clear();
     docRef.current = null;
+    destroyRef.current = null;
+    setFailure(null);
     setVersion(requestVersion.current);
 
     if (!bytes || bytes.byteLength === 0) {
@@ -90,31 +116,38 @@ export function useThumbnails(bytes: Uint8Array | null): Thumbnails {
       resolveReady = resolve;
     });
 
-    // pdf.js takes ownership of the buffer, so hand it a copy.
-    const task = pdfjs.getDocument({ data: bytes.slice() });
-    task.promise.then(
-      (loaded) => {
+    const loading = loadPdfForRendering(bytes).then(
+      ({ document, destroy }) => {
         if (cancelled) {
-          void task.destroy();
+          void destroy();
           resolveReady(null);
-          return;
+          return null;
         }
-        docRef.current = loaded;
-        resolveReady(loaded);
+        docRef.current = document;
+        destroyRef.current = destroy;
+        resolveReady(document);
+        return document;
       },
       (error: unknown) => {
         console.error('โหลด pdf.js ไม่สำเร็จ', error);
+        if (!cancelled) setFailure(toFailure(error));
         resolveReady(null);
+        return null;
       },
     );
 
     return () => {
       cancelled = true;
       docRef.current = null;
+      const destroy = destroyRef.current;
+      destroyRef.current = null;
       resolveReady(null);
-      void task.destroy();
+      // The `.then` above destroys the document itself when it resolves after
+      // this cleanup; here we only handle a document that already loaded.
+      if (destroy) void destroy().catch(() => undefined);
+      void loading;
     };
-  }, [bytes]);
+  }, [bytes, attempt]);
 
   const load = useCallback<ThumbnailLoader>(async (srcIndex, extraRotation = 0) => {
     const key = `${srcIndex}:${extraRotation}`;
@@ -128,23 +161,27 @@ export function useThumbnails(bytes: Uint8Array | null): Thumbnails {
     const doc = docRef.current ?? (await readyRef.current);
     if (!doc) throw new Error('เปิดตัวอย่างเอกสารไม่สำเร็จ');
 
-    const job = limiter.current(() => renderPage(doc, srcIndex, extraRotation)).then(
-      (dataUrl) => {
-        inflight.current.delete(key);
-        if (requestVersion.current === versionAtRequest) {
-          cache.current.set(key, dataUrl);
-        }
-        return dataUrl;
-      },
-      (error: unknown) => {
-        inflight.current.delete(key);
-        throw error;
-      },
-    );
+    const job = limiter
+      .current(() => renderPage(doc, srcIndex, extraRotation))
+      .then(
+        (dataUrl) => {
+          inflight.current.delete(key);
+          if (requestVersion.current === versionAtRequest) {
+            cache.current.set(key, dataUrl);
+          }
+          return dataUrl;
+        },
+        (error: unknown) => {
+          inflight.current.delete(key);
+          throw error;
+        },
+      );
 
     inflight.current.set(key, job);
     return job;
   }, []);
 
-  return useMemo(() => ({ load, version }), [load, version]);
+  const reload = useCallback(() => setAttempt((value) => value + 1), []);
+
+  return useMemo(() => ({ load, version, failure, reload }), [load, version, failure, reload]);
 }

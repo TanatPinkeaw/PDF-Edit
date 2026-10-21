@@ -20,8 +20,12 @@ describe('migrations', () => {
         'app_user',
         'artifact',
         'auth_session',
+        'credit_entry',
+        'credit_wallet',
         'job_run',
         'preset',
+        'redeem_code',
+        'redeem_use',
         'schema_migrations',
         'share_link',
         'workspace',
@@ -29,7 +33,7 @@ describe('migrations', () => {
     );
   });
 
-  it('declares the quota index and unique guards', async () => {
+  it('declares the history, credit and identity guards', async () => {
     const db = await testDb();
     const indexes = await db.query<{ indexname: string }>(
       "select indexname from pg_indexes where schemaname = 'public'",
@@ -41,6 +45,11 @@ describe('migrations', () => {
         'job_run_running_idx',
         'share_link_expiry_idx',
         'workspace_user_idx',
+        'app_user_email_lower_key',
+        'credit_wallet_user_key',
+        'credit_wallet_workspace_key',
+        'credit_entry_charge_once',
+        'credit_entry_refund_once',
       ]),
     );
   });

@@ -16,7 +16,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 
-import { QuotaNotice } from '../components/QuotaNotice';
+import { CreditNotice } from '../components/CreditNotice';
 import { ToolPage } from '../components/ToolPage';
 import { useFileDrop } from '../hooks/useFileDrop';
 import { useToolRun } from '../hooks/useToolRun';
@@ -146,7 +146,7 @@ function MergeRow({ item, index, total, busy, onPassword, onRemove, onMove }: Ro
 
 export function MergePage() {
   const { session } = useWorkspace();
-  const { run, quotaMessage, clearQuotaMessage } = useToolRun();
+  const { run, creditMessage, clearCreditMessage } = useToolRun();
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<MergeItem[]>([]);
   const [merged, setMerged] = useState<MergedResult | null>(null);
@@ -392,7 +392,7 @@ export function MergePage() {
         </section>
 
         <aside className="merge-side">
-          <QuotaNotice message={quotaMessage} onDismiss={clearQuotaMessage} />
+          <CreditNotice message={creditMessage} onDismiss={clearCreditMessage} />
 
           <section className="panel">
             <header className="panel-head">

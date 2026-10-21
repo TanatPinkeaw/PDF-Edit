@@ -31,7 +31,8 @@ export async function closeTestDb(): Promise<void> {
 
 export async function truncateAll(db: Db): Promise<void> {
   await db.query(
-    'truncate app_user, workspace, auth_session, job_run, preset, artifact, share_link restart identity cascade',
+    'truncate app_user, workspace, auth_session, job_run, preset, artifact, share_link, ' +
+      'credit_wallet, credit_entry, redeem_code, redeem_use restart identity cascade',
   );
 }
 
@@ -39,7 +40,8 @@ export function testEnv(overrides: Record<string, string | undefined> = {}): Env
   return readEnv({
     DATABASE_URL: TEST_DATABASE_URL,
     GOOGLE_CLIENT_ID: 'test-client-id.apps.googleusercontent.com',
-    ANON_DAILY_LIMIT: '3',
+    ANON_CREDITS: '3',
+    SIGNUP_BONUS_CREDITS: '20',
     SHARE_MAX_BYTES: '1048576',
     SHARE_TTL_DAYS: '7',
     ...overrides,

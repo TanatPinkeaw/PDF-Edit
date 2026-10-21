@@ -37,7 +37,7 @@ describe('health', () => {
 });
 
 describe('workspace bootstrap', () => {
-  it('creates a workspace with a full quota', async () => {
+  it('creates a workspace with the anonymous credits', async () => {
     const token = workspaceToken();
     const response = await app.inject({
       method: 'POST',
@@ -48,7 +48,7 @@ describe('workspace bootstrap', () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.workspaceId).toMatch(/[0-9a-f-]{36}/);
-    expect(body.quota).toMatchObject({ unlimited: false, limit: 3, used: 0, remaining: 3 });
+    expect(body.credits).toMatchObject({ balance: 3, allowance: 3, member: false });
     expect(body.authConfigured).toBe(false);
   });
 
@@ -88,7 +88,7 @@ describe('job runs', () => {
     expect(started.statusCode).toBe(201);
     const runId = started.json().run.id as string;
     expect(started.json().run.status).toBe('running');
-    expect(started.json().quota.remaining).toBe(2);
+    expect(started.json().credits.balance).toBe(2);
 
     const finished = await app.inject({
       method: 'PATCH',
@@ -108,7 +108,7 @@ describe('job runs', () => {
     expect(history.json().runs[0].params).toEqual({ angle: 90 });
   });
 
-  it('enforces the anonymous quota after three runs', async () => {
+  it('blocks the fourth anonymous run and writes nothing', async () => {
     const token = workspaceToken();
     const headers = originHeaders(token);
 
@@ -129,11 +129,43 @@ describe('job runs', () => {
       payload: { tool: 'watermark' },
     });
 
-    expect(blocked.statusCode).toBe(429);
-    const error = blocked.json().error;
-    expect(error.code).toBe('quota_exceeded');
-    expect(error.quota.remaining).toBe(0);
-    expect(error.quota.resetAt).toBeTruthy();
+    expect(blocked.statusCode).toBe(402);
+    expect(blocked.json().error.code).toBe('insufficient_credits');
+
+    const runs = await db.query('select 1 from job_run');
+    expect(runs.rowCount).toBe(3);
+    const wallet = await db.query<{ balance: number }>('select balance from credit_wallet');
+    expect(wallet.rows[0]?.balance).toBe(0);
+  });
+
+  it('refunds the credit when a run fails', async () => {
+    const headers = originHeaders(workspaceToken());
+    const started = await app.inject({
+      method: 'POST',
+      url: '/api/runs',
+      headers,
+      payload: { tool: 'merge' },
+    });
+    expect(started.json().credits.balance).toBe(2);
+
+    const failed = await app.inject({
+      method: 'PATCH',
+      url: `/api/runs/${started.json().run.id}`,
+      headers,
+      payload: { status: 'failed', error: { code: 'client_error', message: 'ไฟล์เสีย' } },
+    });
+
+    expect(failed.statusCode).toBe(200);
+    expect(failed.json().credits.balance).toBe(3);
+
+    // A second PATCH must not refund the same run twice.
+    const again = await app.inject({
+      method: 'PATCH',
+      url: `/api/runs/${started.json().run.id}`,
+      headers,
+      payload: { status: 'failed', error: { code: 'client_error', message: 'ไฟล์เสีย' } },
+    });
+    expect(again.json().credits.balance).toBe(3);
   });
 
   it('is idempotent for the same client run id', async () => {
@@ -147,7 +179,8 @@ describe('job runs', () => {
     expect(first.statusCode).toBe(201);
     expect(second.statusCode).toBe(200);
     expect(second.json().run.id).toBe(first.json().run.id);
-    expect(second.json().quota.used).toBe(1);
+    // One credit for one run, even though the request was retried.
+    expect(second.json().credits.balance).toBe(2);
   });
 
   it('keeps workspaces isolated', async () => {
@@ -185,6 +218,8 @@ describe('job runs', () => {
 
     const history = await app.inject({ method: 'GET', url: '/api/runs', headers });
     expect(history.json().runs[0].status).toBe('abandoned');
+    // The credit for a run nobody finished comes back.
+    expect(history.json().credits.balance).toBe(3);
   });
 
   it('clears history for the current scope only', async () => {

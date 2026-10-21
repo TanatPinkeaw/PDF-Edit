@@ -37,7 +37,7 @@ afterAll(async () => {
 });
 
 describe('Google sign-in', () => {
-  it('signs in, attaches the anonymous workspace and lifts the quota', async () => {
+  it('signs in and carries the anonymous workspace over', async () => {
     const token = workspaceToken();
     const headers = originHeaders(token);
 
@@ -55,7 +55,8 @@ describe('Google sign-in', () => {
       email: 'tester@example.com',
       name: 'Tester',
     });
-    expect(signIn.json().quota.unlimited).toBe(true);
+    expect(signIn.json().credits).toMatchObject({ member: true, allowance: null });
+    expect(signIn.json().credits.balance).toBeGreaterThanOrEqual(20);
 
     const cookie = sessionCookie(signIn);
     expect(cookie).toMatch(/^pdfstudio_session=/);
@@ -63,7 +64,7 @@ describe('Google sign-in', () => {
     const me = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie } });
     expect(me.statusCode).toBe(200);
     expect(me.json().user.email).toBe('tester@example.com');
-    expect(me.json().quota).toMatchObject({ unlimited: true, remaining: null });
+    expect(me.json().credits).toMatchObject({ member: true, allowance: null });
     expect(me.json().authConfigured).toBe(true);
 
     const history = await app.inject({ method: 'GET', url: '/api/runs', headers: { cookie } });
@@ -75,7 +76,7 @@ describe('Google sign-in', () => {
     expect(workspace.rowCount).toBe(1);
   });
 
-  it('allows more than three runs after signing in', async () => {
+  it('spends the member credits rather than the anonymous allowance', async () => {
     const headers = originHeaders(workspaceToken());
     const signIn = await app.inject({
       method: 'POST',
@@ -94,6 +95,9 @@ describe('Google sign-in', () => {
       });
       expect(response.statusCode).toBe(201);
     }
+
+    const me = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie } });
+    expect(me.json().credits.balance).toBe(15);
   });
 
   it('rejects a credential the verifier does not accept', async () => {
@@ -144,7 +148,7 @@ describe('Google sign-in', () => {
 
     const me = await app.inject({ method: 'GET', url: '/api/me', headers });
     expect(me.json().user).toBeNull();
-    expect(me.json().quota.unlimited).toBe(false);
+    expect(me.json().credits.member).toBe(false);
   });
 
   it('keeps separate Google accounts separate', async () => {

@@ -4,7 +4,7 @@
 ใส่เลขหน้า · ใส่ลายน้ำ · ใส่/ปลดรหัสผ่าน · แยกหน้า · ดาวน์โหลดเป็นภาพ** ได้ในแท็บเดียว
 
 ไฟล์ PDF ไม่ถูกอัปโหลดขึ้นเซิร์ฟเวอร์ เซิร์ฟเวอร์ (Fastify + PostgreSQL) เก็บเฉพาะ
-**ประวัติการใช้งาน พรีเซ็ต โควตา และลิงก์แชร์** — ตัวไฟล์จะขึ้นเซิร์ฟเวอร์ก็ต่อเมื่อผู้ใช้กด
+**บัญชี/เครดิต ประวัติการใช้งาน พรีเซ็ต และลิงก์แชร์** — ตัวไฟล์จะขึ้นเซิร์ฟเวอร์ก็ต่อเมื่อผู้ใช้กด
 "สร้างลิงก์แชร์" เองเท่านั้น
 
 ## เครื่องมือที่พร้อมใช้งาน
@@ -19,14 +19,22 @@
 | Page numbers | เทมเพลต `{n} / {total}`, เริ่มเลข, ข้ามหน้าแรก, 9 ตำแหน่ง, ฟอนต์ Sarabun, เลขไทย |
 | Watermark | ข้อความหรือรูปภาพ, ความทึบ, มุม, ปูทั้งหน้า, ขอบเขตทุกหน้า/ที่เลือก |
 | Protect / Unlock | เข้ารหัส AES-256 พร้อมสิทธิ์การใช้งาน หรือปลดรหัสออกเป็นไฟล์ใหม่ |
-| ประวัติ | ดูทุก run ที่เคยรัน, โควตาที่ใช้, ล้างประวัติ หรือลบข้อมูลทั้งหมด |
+| JPG to PDF | รวมภาพ PNG/JPG เป็น PDF, ขนาดหน้าตามภาพ/A4/Letter, ระยะขอบ, เรียงลำดับก่อนสร้าง |
+| Sign | วางลายเซ็น PNG เลือกมุม ขนาด และหน้าเป้าหมาย (หน้าสุดท้าย/หน้าแรก/ทุกหน้า) |
+| Crop | ครอปขอบทั้ง 4 ด้านแบบ % พร้อมไกด์บนหน้า และใช้กับทุกหน้า |
+| Compress | เรนเดอร์หน้าใหม่ที่ 3 ระดับคุณภาพ พร้อมรายงานขนาดก่อน/หลัง |
+| Word to PDF / PDF to Word | แปลงผ่าน LibreOffice บนเซิร์ฟเวอร์ของคุณ (`/api/convert/*`) |
+| ตรวจระบบ (`#/diagnostics`) | self-test: worker, canvas, ฟอนต์, API — ใช้เวลาหน้าตัวอย่างไม่ขึ้น |
+| ประวัติ | ดูทุก run ที่เคยรัน, เครดิตคงเหลือ + รายการเดินบัญชี, เติมเครดิตด้วยโค้ด, ดาวน์โหลดประวัติเป็น CSV/JSON (เฉพาะรายการที่กรองไว้), ล้างประวัติ หรือลบข้อมูลทั้งหมด |
 | พรีเซ็ต | บันทึกค่าที่ใช้บ่อยต่อเครื่องมือ (เก็บใน PostgreSQL) ใช้ซ้ำได้ในคลิกเดียว |
 | ลิงก์แชร์ | อัปโหลดผลลัพธ์ขึ้นเซิร์ฟเวอร์ชั่วคราวเพื่อให้คนอื่นดาวน์โหลด (หมดอายุ 7 วัน) |
-| Google sign-in | ล็อกอินด้วย Google Identity Services เพื่อใช้งานไม่จำกัด (ถ้าตั้งค่า client id) |
+| สมัครสมาชิก (`#/signup`) | อีเมล + รหัสผ่าน (scrypt), รับเครดิตเริ่มต้น, ยกเครดิตทดลองที่เหลือเข้าบัญชี |
+| Google sign-in | ทางเลือกเสริม: ล็อกอินด้วย Google Identity Services (ถ้าตั้งค่า client id) |
 
-เครื่องมือที่ยังไม่เปิด (Compress, Crop, Redact, Compare, OCR, Office → PDF, PDF/A, Repair,
-AI Summarize/Translate, Workflow) แสดงในหน้าแรกเป็น "กำลังจะมา" เพราะต้องใช้ไลบรารีหรือ
-ไบนารีเพิ่มบนเซิร์ฟเวอร์ ซึ่งขัดกับแนวทาง "ไฟล์อยู่ในเครื่อง" ของโปรเจกต์นี้
+เครื่องมือที่ยังไม่เปิด (Redact, Compare, OCR, PDF/A, Repair, AI Summarize/Translate, Workflow)
+แสดงในหน้าแรกเป็น "กำลังจะมา" เพราะต้องใช้ไลบรารีหรือไบนารีเพิ่มบนเซิร์ฟเวอร์ ซึ่งขัดกับแนวทาง
+"ไฟล์อยู่ในเครื่อง" ของโปรเจกต์นี้ — ยกเว้น Word ⇄ PDF ที่เลือกใช้ LibreOffice บน HomeLab
+เพราะทำในเบราว์เซอร์ให้แม่นไม่ได้
 
 ## เริ่มใช้งาน
 
@@ -54,7 +62,13 @@ pnpm dev:all                  # Vite (5174) + API (8787) พร้อมกั�
 | `pnpm test` | Vitest ทั้ง logic ฝั่ง client และ integration test ของ API |
 | `pnpm build` | typecheck + build static ลง `dist/` |
 | `pnpm db:create` / `db:migrate` / `db:reset` | จัดการฐานข้อมูล dev |
+| `pnpm credits:grant --email a@b.c --amount 50 --note "top-up"` | แอดมินเติมเครดิตให้บัญชี (เขียน ledger ด้วย) |
+| `pnpm credits:codes --count 10 --credits 20 [--uses 1] [--expires 2026-12-31]` | สร้างโค้ดเติมเครดิต — แสดงโค้ดครั้งเดียว เก็บแค่ hash |
+| `pnpm credits:balance --email a@b.c` | ดูยอดเครดิตและจำนวนโค้ดที่ใช้ไปของบัญชี |
 | `pnpm sample` | สร้าง `public/samples/sample-12p.pdf` ใหม่ (ไว้กด "ดูไฟล์ตัวอย่าง") |
+| `node scripts/serve-dist-hostile.mjs` | เสิร์ฟ `dist` แบบจำลอง Nginx ที่ MIME ผิด (`.mjs` → `text/plain`) |
+| `node scripts/check-worker-bundle.mjs` | CI guard: worker ของ pdf.js ต้องออกมาเป็น `.js` เท่านั้น |
+| `node scripts/fetch-fonts.mjs` | ดาวน์โหลดฟอนต์ (Noto Sans Thai / Krub / Cascadia Code) มา self-host |
 
 ## การตั้งค่า (.env)
 
@@ -65,10 +79,12 @@ pnpm dev:all                  # Vite (5174) + API (8787) พร้อมกั�
 | `API_PORT` / `API_HOST` | `8787` / `127.0.0.1` | ที่อยู่ของ API |
 | `APP_ORIGIN` | `http://127.0.0.1:5174` | origin ที่อนุญาตสำหรับ request ที่เปลี่ยนข้อมูล |
 | `GOOGLE_CLIENT_ID` | ว่าง | เปิด Google sign-in (ว่าง = ปุ่มล็อกอินถูกปิด) |
-| `ANON_DAILY_LIMIT` | `3` | จำนวน run ต่อ 24 ชม. ของผู้ใช้ไม่ระบุตัวตน |
+| `ANON_CREDITS` | `3` | เครดิตครั้งเดียวของผู้ใช้ไม่ระบุตัวตน (ไม่รีเซ็ตรายวัน) |
+| `SIGNUP_BONUS_CREDITS` | `20` | เครดิตเริ่มต้นของสมาชิกใหม่ (ให้ครั้งเดียวต่อบัญชี) |
 | `SHARE_MAX_BYTES` | `26214400` (25 MB) | ขนาดไฟล์สูงสุดของลิงก์แชร์ |
 | `SHARE_TTL_DAYS` | `7` | อายุลิงก์แชร์ |
 | `SESSION_TTL_DAYS` | `30` | อายุ session cookie |
+| `SOFFICE_PATH` | `soffice` | ไบนารี LibreOffice ที่ใช้ใน `/api/convert/*` |
 
 ### เปิด Google sign-in
 
@@ -87,11 +103,16 @@ pnpm dev:all                  # Vite (5174) + API (8787) พร้อมกั�
 - **`WorkspaceProvider`** ถือเอกสารที่เปิดอยู่หนึ่งไฟล์ร่วมกันทุกหน้า: `entries`
   (ลำดับหน้า), `selected`, undo/redo stack, bytes ต้นฉบับ — เปิดใน Organize แล้วข้ามไป Rotate
   ต่อได้ทันทีโดยไม่ต้องเลือกไฟล์ใหม่
-- **`useToolRun`** ห่อทุกการรัน: เช็กโควตา → บันทึก run (`running` → `succeeded`/`failed`) →
+- **`useToolRun`** ห่อทุกการรัน: หักเครดิต → บันทึก run (`running` → `succeeded`/`failed`) →
   เก็บผลลัพธ์ล่าสุดไว้ให้ `ShareStrip` แชร์
 - **pdf.js 4.10.38** สำหรับ thumbnail/preview/แปลงเป็นภาพ, **@cantoo/pdf-lib** สำหรับ
   แก้โครงสร้างเอกสารและเข้ารหัส, **fflate** สำหรับ zip, **@dnd-kit** สำหรับลากจัดลำดับ
 - ไฟล์ทำงานในหน่วยความจำเท่านั้น ไม่มี service worker และไม่มีการอัปโหลดโดยปริยาย
+- ฟอนต์ UI เป็น self-host (`public/fonts/google/`, สร้างจาก `scripts/fetch-fonts.mjs`):
+  **Noto Sans Thai** (เนื้อหา/ไทย), **Krub** (หัวข้อ), **Cascadia Code** (โค้ด/ชื่อไฟล์) — ไม่มี request ไป Google
+  ดึงครบทุกน้ำหนักที่ CSS ใช้ (400/500/600/700) เพื่อไม่ให้เบราว์เซอร์ปั้นตัวหนาเทียมบนอักษรไทย
+- หน้าที่ใช้ pdf.js (`useThumbnails`, `page-images`, `compress`) ใช้ worker ที่ Vite บันเดิลเป็น `.js`
+  และแสดงสาเหตุ + ปุ่ม "ลองใหม่" เมื่อโหลดไม่ได้ (ไม่กลืน error เหมือนก่อน)
 
 ### ฝั่งเซิร์ฟเวอร์ (`server/`)
 
@@ -100,17 +121,24 @@ Fastify + `pg` (raw SQL, ไม่มี ORM) — ไม่มี dependency ข
 
 | ตาราง | เก็บอะไร |
 | --- | --- |
-| `app_user` | บัญชี Google (`sub`, email, ชื่อ, รูป) |
+| `app_user` | บัญชี: email, ชื่อ, รูป, `password_hash` (scrypt) หรือ `google_sub` |
 | `workspace` | พื้นที่ทำงานต่อเบราว์เซอร์ — เก็บ **sha256 ของ token** ไม่เก็บตัว token |
 | `auth_session` | session cookie (sha256, อายุ 30 วัน) |
-| `job_run` | ประวัติการรัน: เครื่องมือ, สถานะ, params, ชื่อ/ขนาด/จำนวนหน้า, ระยะเวลา |
+| `job_run` | ประวัติการรัน: เครื่องมือ, สถานะ, params, ชื่อ/ขนาด/จำนวนหน้า, ระยะเวลา, `credit_wallet_id` ที่จ่ายไป |
+| `credit_wallet` | กระเป๋าเครดิต — เจ้าของคนเดียว: user (สมาชิก) หรือ workspace (ผู้ไม่ระบุตัวตน) |
+| `credit_entry` | รายการเดินบัญชี (grant / run / refund / redeem / admin / merge) + ยอดหลังทำรายการ |
+| `redeem_code` | โค้ดเติมเครดิต — เก็บ **sha256 ของโค้ด**, จำนวนเครดิต, จำนวนครั้งที่ใช้ได้, วันหมดอายุ |
+| `redeem_use` | ใครใช้โค้ดไหนแล้ว (1 โค้ดต่อ 1 กระเป๋า 1 ครั้ง) |
 | `preset` | พรีเซ็ตต่อ workspace + tool + ชื่อ (upsert) |
 | `artifact` | ไฟล์ที่ถูกแชร์ (bytes อยู่ในตารางนี้เท่านั้น) |
 | `share_link` | token, วันหมดอายุ, จำนวนดาวน์โหลด |
 
 - ผู้ใช้ไม่ระบุตัวตนได้ workspace จากการ์ด `x-workspace-token` (สร้างใน localStorage)
   เซิร์ฟเวอร์เก็บเฉพาะ hash — ถ้าล้าง storage ก็ได้ workspace ใหม่
-- ล็อกอินแล้ว workspace จะถูกผูกกับ user และโควตากลายเป็นไม่จำกัด
+- ทุก run หัก 1 เครดิตจากกระเป๋าของ workspace/user ใน transaction เดียวกับการสร้าง `job_run` — เครดิตหมดจะได้ **402 `insufficient_credits`** โดยไม่มีแถวประวัติถูกสร้าง
+- งานที่ `failed`/`canceled` หรือค้างเกิน 10 นาที จะคืนเครดิตครั้งเดียว (กันด้วย unique index)
+- ผู้ไม่ระบุตัวตนได้ `ANON_CREDITS` เครดิตแบบครั้งเดียว (ไม่รีเซ็ตรายวัน); สมัครแล้วได้ `SIGNUP_BONUS_CREDITS` และยกเครดิตทดลองที่เหลือเข้าบัญชี
+- ล็อกอินแล้ว workspace จะถูกผูกกับ user → ประวัติและเครดิตตามไปทุกเบราว์เซอร์
 - request ที่เปลี่ยนข้อมูล (POST/PATCH/DELETE) ที่มี `Origin` ต้องมาจาก `APP_ORIGIN`
   (หรือ loopback คู่กัน) ไม่งั้นได้ 403
 - `DELETE /api/me` ลบ workspace/user และข้อมูลที่ cascading ตามทั้งหมด
@@ -121,12 +149,16 @@ Fastify + `pg` (raw SQL, ไม่มี ORM) — ไม่มี dependency ข
 | Method | Path | หมายเหตุ |
 | --- | --- | --- |
 | `GET` | `/api/health` | เช็กว่า API + DB พร้อม |
-| `POST` | `/api/bootstrap` | สร้าง/อ่าน workspace, คืน user + โควตา + สถานะ Google |
+| `POST` | `/api/bootstrap` | สร้าง/อ่าน workspace, คืน user + เครดิต + 5 รายการเดินบัญชีล่าสุด |
 | `GET` | `/api/me` | สถานะเดิมโดยไม่สร้าง workspace |
-| `POST` | `/api/auth/google` | ตรวจ ID token, ผูก workspace, ออก session cookie |
+| `POST` | `/api/auth/signup` | สมัครด้วยอีเมล/รหัสผ่าน → 409 `email_taken`, ออก session cookie |
+| `POST` | `/api/auth/signin` | เข้าสู่ระบบ → 401 `invalid_credentials`, 429 `too_many_attempts` |
+| `POST` | `/api/auth/google` | ตรวจ ID token, ผูก workspace, ออก session cookie (ถ้าตั้ง client id) |
 | `POST` | `/api/auth/signout` | ลบ session |
 | `DELETE` | `/api/me` | ลบข้อมูลทั้งหมดของ workspace/user |
-| `POST` | `/api/runs` | เริ่ม run (เช็กโควตา → 429 `quota_exceeded`) |
+| `POST` | `/api/runs` | เริ่ม run (หัก 1 เครดิต → 402 `insufficient_credits` เมื่อหมด) |
+| `GET` | `/api/credits` | ยอดเครดิต + 10 รายการเดินบัญชีล่าสุด |
+| `POST` | `/api/credits/redeem` | ใช้โค้ดเติมเครดิต → 404 `code_not_found`, 409 `code_unavailable` |
 | `PATCH` | `/api/runs/:id` | จบ run (`succeeded` / `failed` / `canceled`) |
 | `GET` | `/api/runs?limit=` | ประวัติล่าสุด |
 | `DELETE` | `/api/runs` | ล้างประวัติ |
@@ -137,6 +169,8 @@ Fastify + `pg` (raw SQL, ไม่มี ORM) — ไม่มี dependency ข
 | `GET` | `/api/shares/:token` | metadata (410 เมื่อหมดอายุ) |
 | `GET` | `/api/shares/:token/file` | ดาวน์โหลดไฟล์ (นับจำนวนครั้ง) |
 | `DELETE` | `/api/shares/:token` | ยกเลิกลิงก์ |
+| `POST` | `/api/convert/word-to-pdf` | รับ bytes (`application/octet-stream`) + `x-file-name` คืน PDF |
+| `POST` | `/api/convert/pdf-to-word` | คืน `.docx` (คุณภาพขึ้นกับโครงสร้างต้นฉบับ) |
 
 ## การทดสอบ
 
@@ -148,12 +182,32 @@ pnpm typecheck
 - `tests/` — logic ฝั่ง client: ช่วงหน้า, session reducer, undo/redo, ชื่อไฟล์/zip,
   merge, rotate, page numbers (ฝังฟอนต์ไทย), watermark, protect/unlock, paint
 - `server/tests/` — integration ผ่าน `app.inject()` บน PostgreSQL จริง: migration,
-  bootstrap/quota, Google flow (verifier ปลอม), runs, presets, shares (หมดอายุ, ขนาด,
+  bootstrap/credits, password signup/signin (rate limit), Google flow (verifier ปลอม), runs,
+  redeem codes, admin grant, presets, shares (หมดอายุ, ขนาด,
   Origin guard, การแยกข้อมูลระหว่าง workspace)
 - ไฟล์ทดสอบของ server ใช้ฐานข้อมูลร่วมกัน จึงตั้ง `fileParallelism: false`
 
 การตรวจด้วยเบราว์เซอร์จริง: เปิดตัวอย่าง → ลบหน้า → ดาวน์โหลด → ตรวจไฟล์ผลลัพธ์ด้วย pdf-lib
 (จำนวนหน้า/มุมหมุน/ข้อความ) และทดสอบลิงก์แชร์ด้วยการดาวน์โหลดผ่าน `/api/shares/:token/file`
+
+## Deploy (HomeLab / Docker Compose + Nginx)
+
+```bash
+cp deploy/.env.deploy.example deploy/.env.deploy   # แก้ POSTGRES_PASSWORD + APP_ORIGIN
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env.deploy up -d --build
+docker compose -f deploy/docker-compose.yml exec api node server/src/db/migrate.ts
+```
+
+รายละเอียด (backup, อัปเดต, การตรวจหลัง deploy) อยู่ใน [deploy/README.md](deploy/README.md)
+
+### ทำไม worker ของ pdf.js ต้องเป็น `.js`
+
+Nginx มาตรฐานไม่มี MIME ของ `.mjs` จึงเสิร์ฟเป็น `text/plain` — เบราว์เซอร์ปฏิเสธ module
+worker แล้ว pdf.js ล้มทั้งก้อน ทำให้ทุกหน้าขึ้น "แสดงตัวอย่างไม่ได้" โดยไม่มีสาเหตุบนจอ
+
+ตอนนี้ `src/lib/pdfjs.ts` บันเดิล worker ผ่าน Vite (`?worker`) ให้ออกมาเป็น `.js` และ
+`scripts/check-worker-bundle.mjs` จะทำให้ CI แดงทันทีถ้ากลับไปเป็น `.mjs` อีก
+(จำลองโฮสต์ที่ MIME ผิดได้ด้วย `node scripts/serve-dist-hostile.mjs` หลัง `pnpm build`)
 
 ## ข้อจำกัดที่รู้อยู่
 
@@ -164,6 +218,13 @@ pnpm typecheck
 - `Protect` ใช้ AES-256 ของ pdf-lib; `Unlock` ต้องรู้รหัสผ่านเดิม และจะสร้างไฟล์ใหม่ที่ไม่มีรหัส
 - เอกสารหลักพันหน้ายังสร้าง DOM ต่อการ์ดทุกหน้า (thumbnail เป็น lazy แต่ยังไม่มี virtualization)
 - ภาพที่ export เป็น raster: ค้นหา/คัดลอกข้อความไม่ได้ และ 3x บนเอกสารยาวกิน RAM พอสมควร
-- โควตานับทุก run ที่เริ่มแล้ว (รวมที่ล้มเหลว/ถูกยกเลิก) ในหน้าต่าง 24 ชม. แบบเลื่อน; ลิงก์แชร์ไม่กินโควตา
+- `Compress` เรนเดอร์หน้าใหม่เป็น JPEG — ข้อความจะคัดลอกไม่ได้ และไฟล์ต้นฉบับที่เล็กอยู่แล้วอาจใหญ่ขึ้น (UI บอกตรง ๆ)
+- `Crop` ย้าย CropBox เท่านั้น เนื้อหาที่ถูกตัดยังอยู่ในไฟล์ — ไม่ใช่การลบข้อมูล
+- Word ⇄ PDF ต้องมี LibreOffice ใน container ของ API; ถ้าไม่มีจะตอบ 501 พร้อมคำอธิบาย
+- PDF → Word คุณภาพขึ้นกับต้นฉบับ: ตาราง/ฟอร์มซับซ้อนอาจเพี้ยน
+- Docker Compose / Dockerfile ใน `deploy/` ยังไม่ได้รันจริงบนเครื่อง dev (เครื่องนี้ไม่มี Docker) — ตรวจบน HomeLab ก่อนใช้งาน
+- เครดิตเป็น soft gate: งาน PDF ทำในเบราว์เซอร์อยู่แล้ว เครดิตจึงกันการใช้งานเกินสิทธิ์ได้ในระดับหนึ่งเท่านั้น
+- ยังไม่มีอีเมลยืนยันตัวตน/ลืมรหัสผ่าน (ไม่มี SMTP) — รหัสผ่านหายต้องให้แอดมินแก้ใน DB
+- ตัวนับการเดารหัสผ่านอยู่ในหน่วยความจำของ process เดียว (รีสตาร์ท = รีเซ็ต) พอสำหรับ self-host
 - ยังไม่มี rate limit ระดับ IP, CSRF token (ใช้ SameSite=Lax + Origin guard) และยังไม่มี
   ระบบลบ artifact ทันทีเมื่อผู้ใช้ยกเลิกลิงก์ (จะถูกเก็บกวาดตามรอบ)

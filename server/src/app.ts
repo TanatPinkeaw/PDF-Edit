@@ -5,7 +5,10 @@ import { createGoogleVerifier, type GoogleVerifier } from './auth.ts';
 import type { Db } from './db.ts';
 import type { Env } from './env.ts';
 import { ApiError } from './http.ts';
+import { CONVERT_LIMITS } from './convert.ts';
 import { registerAccountRoutes } from './routes/account.ts';
+import { registerConvertRoutes } from './routes/convert.ts';
+import { registerCreditRoutes } from './routes/credits.ts';
 import { registerJobRoutes } from './routes/jobs.ts';
 import { registerPresetRoutes } from './routes/presets.ts';
 import { registerShareRoutes } from './routes/shares.ts';
@@ -43,6 +46,14 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   });
 
   await app.register(cookie);
+
+  // Conversion uploads arrive as raw bytes: no multipart parser, and the body
+  // limit equals the conversion limit so a large file is rejected early.
+  app.addContentTypeParser(
+    'application/octet-stream',
+    { parseAs: 'buffer', bodyLimit: CONVERT_LIMITS.maxBytes },
+    (_request, body, done) => done(null, body),
+  );
 
   const origins = allowedOrigins(env.appOrigin);
   app.addHook('onRequest', async (request) => {
@@ -130,9 +141,11 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   });
 
   registerAccountRoutes(app, { db, env, googleVerifier });
+  registerCreditRoutes(app, { db, env });
   registerJobRoutes(app, { db, env });
   registerPresetRoutes(app, { db });
   registerShareRoutes(app, { db, env });
+  registerConvertRoutes(app, { env });
 
   return app;
 }

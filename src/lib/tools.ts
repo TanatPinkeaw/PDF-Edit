@@ -9,7 +9,13 @@ export type ToolSlug =
   | 'lock'
   | 'activity'
   | 'split'
-  | 'pdf-to-jpg';
+  | 'pdf-to-jpg'
+  | 'jpg-to-pdf'
+  | 'sign'
+  | 'crop'
+  | 'compress'
+  | 'word-to-pdf'
+  | 'pdf-to-word';
 
 export type ToolIcon =
   | 'organize'
@@ -20,6 +26,11 @@ export type ToolIcon =
   | 'lock'
   | 'split'
   | 'image'
+  | 'jpg-to-pdf'
+  | 'sign'
+  | 'crop'
+  | 'compress'
+  | 'office'
   | 'soon';
 
 export type ToolStatus = 'ready' | 'soon';
@@ -101,22 +112,66 @@ export const READY_TOOLS: ToolDefinition[] = [
     icon: 'image',
     href: '#/organize',
   },
+  {
+    slug: 'jpg-to-pdf',
+    title: 'JPG to PDF',
+    description: 'รวมภาพ PNG/JPG เป็น PDF กำหนดขนาดหน้าและระยะขอบได้',
+    status: 'ready',
+    icon: 'jpg-to-pdf',
+    href: '#/jpg-to-pdf',
+  },
+  {
+    slug: 'sign',
+    title: 'Sign PDF',
+    description: 'วางลายเซ็น PNG เลือกมุม ขนาด และหน้าเป้าหมาย',
+    status: 'ready',
+    icon: 'sign',
+    href: '#/sign',
+  },
+  {
+    slug: 'crop',
+    title: 'Crop PDF',
+    description: 'ครอปขอบหน้าเป็นรายหน้า ปรับได้ทั้ง 4 ด้าน',
+    status: 'ready',
+    icon: 'crop',
+    href: '#/crop',
+  },
+  {
+    slug: 'compress',
+    title: 'Compress PDF',
+    description: 'ลดขนาดไฟล์ด้วยการเรนเดอร์หน้าใหม่ เลือกคุณภาพได้ 3 ระดับ',
+    status: 'ready',
+    icon: 'compress',
+    href: '#/compress',
+  },
+  {
+    slug: 'word-to-pdf',
+    title: 'Word to PDF',
+    description: 'แปลง .docx / .doc เป็น PDF ด้วย LibreOffice บนเซิร์ฟเวอร์ของคุณ',
+    status: 'ready',
+    icon: 'office',
+    href: '#/word-to-pdf',
+  },
+  {
+    slug: 'pdf-to-word',
+    title: 'PDF to Word',
+    description: 'แปลง PDF เป็น .docx เพื่อแก้ไขต่อ (คุณภาพขึ้นกับต้นฉบับ)',
+    status: 'ready',
+    icon: 'office',
+    href: '#/pdf-to-word',
+  },
 ];
 
 /** Tools shown as "coming soon" so the roadmap is visible. */
 export const UPCOMING_TOOLS: ToolDefinition[] = [
-  { slug: 'compress', title: 'Compress PDF', description: 'ลดขนาดไฟล์ด้วยการเรนเดอร์หน้าใหม่', status: 'soon', icon: 'soon' },
-  { slug: 'crop', title: 'Crop PDF', description: 'ครอปขอบหน้าเป็นรายหน้า', status: 'soon', icon: 'soon' },
   { slug: 'redact', title: 'Redact PDF', description: 'ลบข้อมูล sensitive ออกจากเนื้อหาจริง', status: 'soon', icon: 'soon' },
   { slug: 'compare', title: 'Compare PDF', description: 'เทียบสองไฟล์แบบเคียงข้างกัน', status: 'soon', icon: 'soon' },
   { slug: 'pdf-to-markdown', title: 'PDF to Markdown', description: 'สกัดข้อความเป็น Markdown', status: 'soon', icon: 'soon' },
-  { slug: 'jpg-to-pdf', title: 'JPG to PDF', description: 'รวมภาพเป็น PDF กำหนดขนาดหน้าได้', status: 'soon', icon: 'soon' },
-  { slug: 'sign', title: 'Sign PDF', description: 'เซ็นชื่อด้วยภาพหรือลายเซ็นที่วาด', status: 'soon', icon: 'soon' },
+
   { slug: 'forms', title: 'PDF Forms', description: 'กรอกฟอร์มและ flatten ก่อนส่งออก', status: 'soon', icon: 'soon' },
   { slug: 'scan', title: 'Scan to PDF', description: 'ถ่ายเอกสารจากมือถือเป็น PDF', status: 'soon', icon: 'soon' },
   { slug: 'ocr', title: 'OCR PDF', description: 'ทำให้ไฟล์สแกนค้นหาและคัดลอกได้', status: 'soon', icon: 'soon' },
   { slug: 'html-to-pdf', title: 'HTML to PDF', description: 'แปลง URL หรือ HTML เป็น PDF', status: 'soon', icon: 'soon' },
-  { slug: 'office', title: 'Word / Excel → PDF', description: 'ต้องติดตั้ง LibreOffice บนเซิร์ฟเวอร์', status: 'soon', icon: 'soon' },
   { slug: 'pdfa', title: 'PDF to PDF/A', description: 'เก็บถาวรตามมาตรฐาน ISO', status: 'soon', icon: 'soon' },
   { slug: 'repair', title: 'Repair PDF', description: 'กู้ไฟล์เสีย (ต้องใช้ qpdf / Ghostscript)', status: 'soon', icon: 'soon' },
   { slug: 'translate', title: 'Translate PDF', description: 'แปลทั้งไฟล์ด้วย AI คงรูปแบบเดิม', status: 'soon', icon: 'soon', badge: 'New' },

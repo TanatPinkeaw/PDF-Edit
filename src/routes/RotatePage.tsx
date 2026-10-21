@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { PresetPicker } from '../components/PresetPicker';
-import { QuotaNotice } from '../components/QuotaNotice';
+import { CreditNotice } from '../components/CreditNotice';
 import { ToolPage } from '../components/ToolPage';
 import { Workbench } from '../components/Workbench';
 import { useCurrentDocument } from '../hooks/useCurrentDocument';
@@ -23,7 +23,7 @@ type Scope = 'all' | 'selected';
 
 export function RotatePage() {
   const { session } = useWorkspace();
-  const { run, quotaMessage, clearQuotaMessage } = useToolRun();
+  const { run, creditMessage, clearCreditMessage } = useToolRun();
   const current = useCurrentDocument();
   const [angle, setAngle] = useState<RotationAngle>(90);
   const [scope, setScope] = useState<Scope>('all');
@@ -154,7 +154,7 @@ export function RotatePage() {
               </p>
             </section>
 
-            <QuotaNotice message={quotaMessage} onDismiss={clearQuotaMessage} />
+            <CreditNotice message={creditMessage} onDismiss={clearCreditMessage} />
 
             <PresetPicker
               tool="rotate"

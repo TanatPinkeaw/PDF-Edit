@@ -150,6 +150,18 @@ export function Workbench({
 
             {children}
 
+            {thumbnails.failure && (
+              <div className="thumbnail-warning" role="alert">
+                <div>
+                  <strong>{thumbnails.failure.message}</strong>
+                  <p>{thumbnails.failure.detail}</p>
+                </div>
+                <button type="button" onClick={thumbnails.reload}>
+                  ลองใหม่
+                </button>
+              </div>
+            )}
+
             <PageGrid
               entries={doc.entries}
               selection={state.selection}

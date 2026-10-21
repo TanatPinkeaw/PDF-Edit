@@ -1,35 +1,118 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import {
   SESSION_COOKIE,
   attachWorkspaceToUser,
+  burnPasswordCheck,
   clearSessionCookie,
+  createPasswordUser,
   createSession,
   deleteSession,
+  findUserByEmail,
+  hashPassword,
+  normalizeEmail,
   requireWorkspace,
   resolveContext,
   setSessionCookie,
   upsertUser,
+  verifyPassword,
   type GoogleVerifier,
+  type PublicUser,
 } from '../auth.ts';
+import {
+  listCreditEntries,
+  mergeAnonymousWallet,
+  openWallet,
+  type CreditConfig,
+  type Credits,
+} from '../credits.ts';
 import type { Db } from '../db.ts';
 import type { Env } from '../env.ts';
-import { ApiError, readObjectBody, readString } from '../http.ts';
-import { getQuota } from '../quota.ts';
+import { ApiError, badRequest, readObjectBody, readString } from '../http.ts';
+import { createSigninGuard } from '../signin-guard.ts';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 200;
+
+function creditConfig(env: Env): CreditConfig {
+  return { signupBonus: env.signupBonusCredits, anonCredits: env.anonCredits };
+}
+
+/** Passwords are never trimmed: leading/trailing spaces are part of the secret. */
+function readPassword(body: Record<string, unknown>, options: { checkStrength: boolean }): string {
+  const raw = body.password;
+  if (typeof raw !== 'string' || raw === '') throw badRequest('ต้องระบุ password');
+  if (raw.length > PASSWORD_MAX_LENGTH) {
+    throw badRequest(`รหัสผ่านยาวเกิน ${PASSWORD_MAX_LENGTH} ตัวอักษร`);
+  }
+  if (options.checkStrength && raw.length < PASSWORD_MIN_LENGTH) {
+    throw badRequest(`รหัสผ่านต้องยาวอย่างน้อย ${PASSWORD_MIN_LENGTH} ตัวอักษร`);
+  }
+  return raw;
+}
+
+/**
+ * Opens the member wallet (which grants the signup bonus exactly once), turns
+ * the current browser into the account's workspace and merges whatever is left
+ * of the anonymous allowance.
+ */
+async function adoptWorkspace(
+  db: Db,
+  context: Awaited<ReturnType<typeof resolveContext>>,
+  user: PublicUser,
+  config: CreditConfig,
+): Promise<void> {
+  await openWallet(
+    db,
+    { ...context, user },
+    { credits: config.signupBonus, reason: 'signup_bonus' },
+  );
+  if (!context.workspaceId) return;
+  await attachWorkspaceToUser(db, context.workspaceId, user.id);
+  await mergeAnonymousWallet(db, context.workspaceId, user.id);
+}
 
 export function registerAccountRoutes(
   app: FastifyInstance,
   deps: { db: Db; env: Env; googleVerifier: GoogleVerifier | null },
 ): void {
   const { db, env, googleVerifier } = deps;
+  const signinGuard = createSigninGuard();
 
-  const state = async (context: Awaited<ReturnType<typeof resolveContext>>) => ({
-    workspaceId: context.workspaceId,
-    user: context.user,
-    quota: await getQuota(db, context, env.anonDailyLimit),
-    authConfigured: googleVerifier !== null,
-    googleClientId: env.googleClientId,
-  });
+  const state = async (
+    context: Awaited<ReturnType<typeof resolveContext>>,
+    user: PublicUser | null = context.user,
+  ) => {
+    const resolved = user === context.user ? context : { ...context, user };
+    const grant: CreditConfig = creditConfig(env);
+    const wallet = await openWallet(
+      db,
+      resolved,
+      resolved.user
+        ? { credits: grant.signupBonus, reason: 'signup_bonus' }
+        : { credits: grant.anonCredits, reason: 'anon_grant' },
+    );
+    const credits: Credits = {
+      balance: wallet.balance,
+      allowance: resolved.user ? null : grant.anonCredits,
+      member: resolved.user !== null,
+    };
+
+    return {
+      workspaceId: resolved.workspaceId,
+      user: resolved.user,
+      credits,
+      recentEntries: await listCreditEntries(db, wallet.id, 5),
+      authConfigured: googleVerifier !== null,
+      googleClientId: env.googleClientId,
+    };
+  };
+
+  const startSession = async (reply: FastifyReply, userId: string): Promise<void> => {
+    const session = await createSession(db, userId, env.sessionTtlDays);
+    setSessionCookie(reply, session.token, session.expiresAt, env.isProduction);
+  };
 
   app.post('/api/bootstrap', async (request) => {
     const context = await resolveContext(db, request);
@@ -43,6 +126,65 @@ export function registerAccountRoutes(
       throw new ApiError(401, 'unauthorized', 'ยังไม่มี workspace หรือ session');
     }
     return state(context);
+  });
+
+  app.post('/api/auth/signup', async (request, reply) => {
+    const context = await resolveContext(db, request);
+    const body = readObjectBody(request.body);
+
+    const email = readString(body, 'email', { required: true, maxLength: 320 }) ?? '';
+    if (!EMAIL_PATTERN.test(email)) throw badRequest('อีเมลไม่ถูกต้อง');
+    const password = readPassword(body, { checkStrength: true });
+    const name = readString(body, 'name', { maxLength: 80 });
+
+    const passwordHash = await hashPassword(password);
+    const user = await createPasswordUser(db, {
+      email: normalizeEmail(email),
+      name,
+      passwordHash,
+    });
+
+    await adoptWorkspace(db, context, user, creditConfig(env));
+    await startSession(reply, user.id);
+    reply.code(201);
+    return state({ ...context, user }, user);
+  });
+
+  app.post('/api/auth/signin', async (request, reply) => {
+    const context = await resolveContext(db, request);
+    const body = readObjectBody(request.body);
+
+    const email = readString(body, 'email', { required: true, maxLength: 320 }) ?? '';
+    const password = readPassword(body, { checkStrength: false });
+
+    const key = `${normalizeEmail(email)}|${request.ip}`;
+    const decision = signinGuard.check(key);
+    if (!decision.allowed) {
+      throw new ApiError(
+        429,
+        'too_many_attempts',
+        `ลองเข้าสู่ระบบผิดหลายครั้งเกินไป — ลองใหม่ในอีก ${Math.ceil(decision.retryAfterMs / 60_000)} นาที`,
+      );
+    }
+
+    const found = await findUserByEmail(db, email);
+    if (!found || !found.passwordHash) {
+      // Same cost and same message as a wrong password: no account enumeration.
+      await burnPasswordCheck(password);
+      signinGuard.fail(key);
+      throw new ApiError(401, 'invalid_credentials', 'อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+    }
+
+    const matches = await verifyPassword(password, found.passwordHash);
+    if (!matches) {
+      signinGuard.fail(key);
+      throw new ApiError(401, 'invalid_credentials', 'อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+    }
+
+    signinGuard.reset(key);
+    await adoptWorkspace(db, context, found.user, creditConfig(env));
+    await startSession(reply, found.user.id);
+    return state({ ...context, user: found.user }, found.user);
   });
 
   app.post('/api/auth/google', async (request, reply) => {
@@ -61,14 +203,10 @@ export function registerAccountRoutes(
     const profile = await googleVerifier(credential ?? '');
     const user = await upsertUser(db, profile);
 
-    if (context.workspaceId) {
-      await attachWorkspaceToUser(db, context.workspaceId, user.id);
-    }
+    await adoptWorkspace(db, context, user, creditConfig(env));
+    await startSession(reply, user.id);
 
-    const session = await createSession(db, user.id, env.sessionTtlDays);
-    setSessionCookie(reply, session.token, session.expiresAt, env.isProduction);
-
-    return { user, quota: { unlimited: true, limit: null, used: 0, remaining: null, resetAt: null } };
+    return state({ ...context, user }, user);
   });
 
   app.post('/api/auth/signout', async (request, reply) => {
@@ -86,17 +224,17 @@ export function registerAccountRoutes(
 
     let deletedWorkspaces = 0;
     if (context.user) {
-      const result = await db.query<{ id: string }>(
+      const deleted = await db.query<{ id: string }>(
         'delete from workspace where user_id = $1 returning id',
         [context.user.id],
       );
-      deletedWorkspaces = result.rowCount ?? 0;
+      deletedWorkspaces = deleted.rowCount ?? 0;
       await db.query('delete from app_user where id = $1', [context.user.id]);
     } else if (context.workspaceId) {
-      const result = await db.query<{ id: string }>('delete from workspace where id = $1 returning id', [
+      const deleted = await db.query<{ id: string }>('delete from workspace where id = $1 returning id', [
         context.workspaceId,
       ]);
-      deletedWorkspaces = result.rowCount ?? 0;
+      deletedWorkspaces = deleted.rowCount ?? 0;
     }
 
     clearSessionCookie(reply, env.isProduction);

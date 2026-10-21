@@ -1,6 +1,6 @@
 import { ExportPanel } from '../components/ExportPanel';
 import { ImageExportPanel } from '../components/ImageExportPanel';
-import { QuotaNotice } from '../components/QuotaNotice';
+import { CreditNotice } from '../components/CreditNotice';
 import { SplitPanel } from '../components/SplitPanel';
 import { ToolPage } from '../components/ToolPage';
 import { Workbench } from '../components/Workbench';
@@ -11,7 +11,7 @@ import { useWorkspace } from '../state/workspace-context';
 
 export function OrganizePage() {
   const { session } = useWorkspace();
-  const { track, quotaMessage, clearQuotaMessage } = useToolRun();
+  const { track, creditMessage, clearCreditMessage } = useToolRun();
   const { doc, state, busy, imageProgress } = session;
   const selectedCount = selectedPageNumbers(state).length;
 
@@ -90,7 +90,7 @@ export function OrganizePage() {
               onDownload={handleDownload}
             />
 
-            <QuotaNotice message={quotaMessage} onDismiss={clearQuotaMessage} />
+            <CreditNotice message={creditMessage} onDismiss={clearCreditMessage} />
 
             <SplitPanel
               total={doc?.entries.length ?? 0}

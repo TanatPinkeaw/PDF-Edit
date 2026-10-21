@@ -3,7 +3,7 @@ import { READY_TOOLS, UPCOMING_TOOLS } from '../lib/tools';
 import { useAccount } from '../state/account-context';
 
 export function HomePage() {
-  const { user, quota, authConfigured, signIn, busy } = useAccount();
+  const { user, credits } = useAccount();
 
   return (
     <main className="home">
@@ -30,21 +30,23 @@ export function HomePage() {
 
         <ul className="home-facts">
           <li>ไม่อัปโหลดไฟล์</li>
-          <li>{user ? 'ใช้งานไม่จำกัด' : `ฟรี ${quota.limit ?? 3} ครั้ง / 24 ชม.`}</li>
+          <li>{user ? `สมาชิก · ${credits.balance} เครดิต` : `ทดลองฟรี ${credits.allowance ?? credits.balance} เครดิต`}</li>
           <li>PostgreSQL เก็บประวัติและพรีเซ็ต</li>
         </ul>
 
-        {!user && quota.remaining === 0 && (
+        {!user && credits.balance === 0 && (
           <div className="home-quota">
-            <p>คุณใช้ครบ {quota.limit ?? 3} ครั้งแล้วใน 24 ชั่วโมง — เข้าสู่ระบบเพื่อใช้งานต่อ</p>
-            <button
-              type="button"
-              className="button-primary"
-              onClick={() => void signIn()}
-              disabled={busy || !authConfigured}
-            >
-              {authConfigured ? 'เข้าสู่ระบบด้วย Google' : 'ยังไม่ได้ตั้งค่า Google Client ID'}
-            </button>
+            <p>
+              เครดิตทดลองหมดแล้ว — สมัครสมาชิกเพื่อรับเครดิตเริ่มต้น หรือใช้โค้ดเติมเครดิตจากหน้าประวัติ
+            </p>
+            <div className="home-actions">
+              <a className="button-primary" href="#/signup">
+                สมัครสมาชิก
+              </a>
+              <a className="button-secondary" href="#/activity">
+                เติมเครดิต
+              </a>
+            </div>
           </div>
         )}
       </section>

@@ -1,11 +1,30 @@
 /** Typed fetch wrapper for the local API, plus the anonymous workspace token. */
 
-export type Quota = {
-  unlimited: boolean;
-  limit: number | null;
-  used: number;
-  remaining: number | null;
-  resetAt: string | null;
+/** Every recorded run costs one credit; members keep the wallet on their account. */
+export type Credits = {
+  balance: number;
+  /** Anonymous browsers only: the one-off allowance they started with. */
+  allowance: number | null;
+  member: boolean;
+};
+
+export type CreditReason =
+  | 'anon_grant'
+  | 'signup_bonus'
+  | 'run'
+  | 'refund'
+  | 'redeem'
+  | 'admin'
+  | 'merge';
+
+export type CreditEntry = {
+  id: string;
+  delta: number;
+  reason: CreditReason;
+  note: string | null;
+  balanceAfter: number;
+  jobRunId: string | null;
+  createdAt: string;
 };
 
 export type PublicUser = {
@@ -18,7 +37,8 @@ export type PublicUser = {
 export type AccountSnapshot = {
   workspaceId: string | null;
   user: PublicUser | null;
-  quota: Quota;
+  credits: Credits;
+  recentEntries: CreditEntry[];
   authConfigured: boolean;
   googleClientId: string | null;
 };
@@ -162,24 +182,28 @@ export async function apiFetch<T>(path: string, request: ApiRequest = {}): Promi
     );
   }
 
+  // A static host without an /api proxy answers 200 with index.html. Returning
+  // null there would surface as a confusing "cannot read property of null" in
+  // the caller, so fail with the actual reason instead.
+  if (payload === null || typeof payload !== 'object') {
+    throw new ApiError(
+      response.status,
+      'invalid_response',
+      `การตอบกลับจาก ${path} ไม่ใช่ JSON — ตรวจว่า /api ถูก proxy ไปที่เซิร์ฟเวอร์`,
+    );
+  }
+
   return payload as T;
 }
 
-export function isQuota(value: unknown): value is Quota {
+export function isCredits(value: unknown): value is Credits {
   if (typeof value !== 'object' || value === null) return false;
-  const quota = value as Partial<Quota>;
-  return typeof quota.unlimited === 'boolean' && typeof quota.used === 'number';
+  const credits = value as Partial<Credits>;
+  return typeof credits.balance === 'number' && typeof credits.member === 'boolean';
 }
 
-export const DEFAULT_QUOTA: Quota = {
-  unlimited: false,
-  limit: 3,
-  used: 0,
-  remaining: 3,
-  resetAt: null,
-};
+export const DEFAULT_CREDITS: Credits = { balance: 3, allowance: 3, member: false };
 
-export function formatQuota(quota: Quota): string {
-  if (quota.unlimited) return 'ไม่จำกัด';
-  return `เหลือ ${quota.remaining ?? 0}/${quota.limit ?? 3} ครั้ง`;
+export function formatCredits(credits: Credits): string {
+  return credits.balance === 1 ? 'เหลือ 1 เครดิต' : `เหลือ ${credits.balance} เครดิต`;
 }

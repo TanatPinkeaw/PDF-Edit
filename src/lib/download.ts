@@ -72,6 +72,23 @@ export function mergedFileName(fileName: string): string {
   return `${baseName(fileName)}-merged.pdf`;
 }
 
+export function imagesPdfFileName(fileName: string): string {
+  const withoutImageExtension = fileName.replace(/\.(png|jpe?g|webp)$/i, '');
+  return `${baseName(withoutImageExtension)}-images.pdf`;
+}
+
+export function signedFileName(fileName: string): string {
+  return `${baseName(fileName)}-signed.pdf`;
+}
+
+export function croppedFileName(fileName: string): string {
+  return `${baseName(fileName)}-cropped.pdf`;
+}
+
+export function compressedFileName(fileName: string): string {
+  return `${baseName(fileName)}-compressed.pdf`;
+}
+
 /** Best-effort MIME type from an output file name. */
 export function mimeForName(name: string): string {
   if (/\.zip$/i.test(name)) return 'application/zip';

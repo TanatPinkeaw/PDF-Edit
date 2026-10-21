@@ -1,6 +1,7 @@
 /**
- * Account state: anonymous workspace quota, optional Google sign-in.
- * One bootstrap request on load; quota updates are pushed by `trackRun`.
+ * Account state: the credit wallet, email/password members and the optional
+ * Google sign-in. One bootstrap request on load; credit updates are pushed by
+ * `trackRun` and by redeeming a code.
  */
 
 import {
@@ -15,30 +16,35 @@ import {
 } from 'react';
 
 import {
-  DEFAULT_QUOTA,
+  DEFAULT_CREDITS,
   apiFetch,
-  isQuota,
+  isCredits,
   resetWorkspaceToken,
   type AccountSnapshot,
-  type Quota,
+  type CreditEntry,
+  type Credits,
 } from '../lib/api';
 import { requestGoogleCredential } from '../lib/google-auth';
-import { QUOTA_EVENT } from '../lib/runs';
+import { CREDITS_EVENT } from '../lib/runs';
 
 type AccountStatus = 'loading' | 'ready' | 'offline';
 
 type AccountValue = {
   status: AccountStatus;
   snapshot: AccountSnapshot | null;
-  quota: Quota;
+  credits: Credits;
+  recentEntries: CreditEntry[];
   user: AccountSnapshot['user'];
   authConfigured: boolean;
   googleClientId: string | null;
   error: string | null;
   busy: boolean;
   refresh: () => Promise<void>;
-  signIn: () => Promise<void>;
+  signUp: (email: string, password: string, name?: string) => Promise<boolean>;
+  signIn: (email: string, password: string) => Promise<boolean>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
+  redeem: (code: string) => Promise<number>;
   deleteEverything: () => Promise<void>;
 };
 
@@ -84,24 +90,53 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   hasSnapshot.current = snapshot !== null;
 
   useEffect(() => {
-    const handleQuota = (event: Event) => {
-      const quota = (event as CustomEvent<unknown>).detail;
-      if (!isQuota(quota)) return;
-      // A quota event means the API is reachable again.
+    const handleCredits = (event: Event) => {
+      const credits = (event as CustomEvent<unknown>).detail;
+      if (!isCredits(credits)) return;
+      // A credit update means the API is reachable again.
       setStatus('ready');
       setError(null);
       if (!hasSnapshot.current) {
         void refresh();
         return;
       }
-      setSnapshot((current) => (current ? { ...current, quota } : current));
+      setSnapshot((current) => (current ? { ...current, credits } : current));
     };
 
-    window.addEventListener(QUOTA_EVENT, handleQuota);
-    return () => window.removeEventListener(QUOTA_EVENT, handleQuota);
+    window.addEventListener(CREDITS_EVENT, handleCredits);
+    return () => window.removeEventListener(CREDITS_EVENT, handleCredits);
   }, [refresh]);
 
-  const signIn = useCallback(async () => {
+  const authenticate = useCallback(
+    async (path: string, body: Record<string, unknown>): Promise<boolean> => {
+      setBusy(true);
+      setError(null);
+      try {
+        await apiFetch(path, { method: 'POST', body });
+        await refresh();
+        return true;
+      } catch (authError) {
+        if (mounted.current) setError(errorMessage(authError));
+        return false;
+      } finally {
+        if (mounted.current) setBusy(false);
+      }
+    },
+    [refresh],
+  );
+
+  const signUp = useCallback(
+    (email: string, password: string, name?: string) =>
+      authenticate('/api/auth/signup', { email, password, ...(name ? { name } : {}) }),
+    [authenticate],
+  );
+
+  const signIn = useCallback(
+    (email: string, password: string) => authenticate('/api/auth/signin', { email, password }),
+    [authenticate],
+  );
+
+  const signInWithGoogle = useCallback(async () => {
     const clientId = snapshot?.googleClientId ?? null;
     if (!clientId) {
       setError('ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID — เพิ่มใน .env แล้วรีสตาร์ท API');
@@ -133,6 +168,31 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     }
   }, [refresh]);
 
+  const redeem = useCallback(async (code: string): Promise<number> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await apiFetch<{
+        granted: number;
+        credits: Credits;
+        entries: CreditEntry[];
+      }>('/api/credits/redeem', { method: 'POST', body: { code } });
+      if (mounted.current) {
+        setSnapshot((current) =>
+          current
+            ? { ...current, credits: response.credits, recentEntries: response.entries }
+            : current,
+        );
+      }
+      return response.granted;
+    } catch (redeemError) {
+      if (mounted.current) setError(errorMessage(redeemError));
+      throw redeemError;
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }, []);
+
   const deleteEverything = useCallback(async () => {
     setBusy(true);
     try {
@@ -150,18 +210,34 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       snapshot,
-      quota: snapshot?.quota ?? DEFAULT_QUOTA,
+      credits: snapshot?.credits ?? DEFAULT_CREDITS,
+      recentEntries: snapshot?.recentEntries ?? [],
       user: snapshot?.user ?? null,
       authConfigured: snapshot?.authConfigured ?? false,
       googleClientId: snapshot?.googleClientId ?? null,
       error,
       busy,
       refresh,
+      signUp,
       signIn,
+      signInWithGoogle,
       signOut,
+      redeem,
       deleteEverything,
     }),
-    [status, snapshot, error, busy, refresh, signIn, signOut, deleteEverything],
+    [
+      status,
+      snapshot,
+      error,
+      busy,
+      refresh,
+      signUp,
+      signIn,
+      signInWithGoogle,
+      signOut,
+      redeem,
+      deleteEverything,
+    ],
   );
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;

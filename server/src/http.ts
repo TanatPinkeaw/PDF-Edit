@@ -5,11 +5,23 @@ export type ApiErrorCode =
   | 'unauthorized'
   | 'forbidden_origin'
   | 'not_found'
+  | 'email_taken'
+  | 'invalid_credentials'
+  | 'too_many_attempts'
+  | 'insufficient_credits'
+  | 'code_not_found'
+  | 'code_unavailable'
   | 'quota_exceeded'
   | 'auth_not_configured'
   | 'stream_too_large'
   | 'gone'
-  | 'internal';
+  | 'internal'
+  | 'empty_file'
+  | 'file_too_large'
+  | 'unsupported_type'
+  | 'converter_missing'
+  | 'conversion_failed'
+  | 'timeout';
 
 export class ApiError extends Error {
   readonly statusCode: number;
