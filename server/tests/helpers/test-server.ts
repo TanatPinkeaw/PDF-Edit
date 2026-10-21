@@ -9,7 +9,7 @@ import { ensureDatabase } from '../../src/db/create.ts';
 import { runMigrations } from '../../src/db/migrate.ts';
 import { DEFAULT_TEST_DATABASE_URL, readEnv, type Env } from '../../src/env.ts';
 import { ApiError } from '../../src/http.ts';
-import type { Mailer, VerificationMail } from '../../src/mail.ts';
+import type { CodePurpose, Mailer, SecurityMail } from '../../src/mail.ts';
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? DEFAULT_TEST_DATABASE_URL;
 
@@ -84,16 +84,21 @@ export async function createTestApp(options: {
  * Mail without a mailbox: records every code so a test can confirm it, and
  * reports itself as enforced so the credit gate stays on.
  */
-export type RecordingMailer = Mailer & { sent: VerificationMail[]; lastCode(): string };
+export type RecordingMailer = Mailer & {
+  sent: SecurityMail[];
+  lastCode(): string;
+  lastPurpose(): CodePurpose | null;
+};
 
 export function recordingMailer(): RecordingMailer {
-  const sent: VerificationMail[] = [];
+  const sent: SecurityMail[] = [];
   return {
     mode: 'log',
     enforced: true,
     sent,
     lastCode: () => sent[sent.length - 1]?.code ?? '',
-    async sendVerificationCode(mail) {
+    lastPurpose: () => sent[sent.length - 1]?.purpose ?? null,
+    async sendCode(mail) {
       sent.push(mail);
     },
   };

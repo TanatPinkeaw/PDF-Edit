@@ -237,7 +237,7 @@ describe('credit gate', () => {
       mailer: {
         mode: 'disabled',
         enforced: false,
-        async sendVerificationCode() {
+        async sendCode() {
           throw new Error('ไม่ควรถูกเรียกเมื่อไม่มี SMTP');
         },
       },

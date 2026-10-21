@@ -1,16 +1,17 @@
 /**
- * Email verification for members: a six-digit code that proves the mailbox is
- * theirs before the wallet can be spent.
+ * Security codes for members: a six-digit code proves control of the mailbox.
+ * Two purposes share this machinery — verifying the address before credits can
+ * be spent, and setting a new password.
  *
  * Codes are stored as `sha256(user id + code)` only, live for ten minutes, allow
  * five wrong guesses, and are rate-limited per account so the endpoint cannot be
- * used as a mail relay. Anonymous browsers have no mailbox, so they are never
- * asked to verify.
+ * used as a mail relay. A code only works for the purpose it was issued for.
  */
 
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 
 import type { RequestContext } from './auth.ts';
+import type { CodePurpose } from './mail.ts';
 import type { Db } from './db.ts';
 import { ApiError, badRequest } from './http.ts';
 import type { Mailer } from './mail.ts';
@@ -59,14 +60,14 @@ export async function isEmailVerified(db: Db, userId: string): Promise<boolean> 
   return result.rows[0]?.email_verified === true;
 }
 
-async function pendingCode(db: Db, userId: string): Promise<PendingCode | null> {
+async function pendingCode(db: Db, userId: string, purpose: CodePurpose): Promise<PendingCode | null> {
   const result = await db.query<PendingCode>(
     `select id, code_hash, attempts, expires_at, created_at
        from email_verification
-      where user_id = $1 and consumed_at is null
+      where user_id = $1 and purpose = $2 and consumed_at is null
       order by created_at desc
       limit 1`,
-    [userId],
+    [userId, purpose],
   );
   return result.rows[0] ?? null;
 }
@@ -82,7 +83,7 @@ export async function describeVerification(
   user: VerifiableUser,
 ): Promise<VerificationStatus> {
   const verified = await isEmailVerified(db, user.id);
-  const pending = verified ? null : await pendingCode(db, user.id);
+  const pending = verified ? null : await pendingCode(db, user.id, 'verify');
   return {
     verified,
     enforced: mailer.enforced,
@@ -93,24 +94,21 @@ export async function describeVerification(
 }
 
 /**
- * Sends a fresh code and returns the new state. The previous open code is
- * cancelled first so two codes can never be valid at the same time, and a row is
- * removed again if the mail service rejects it (otherwise a broken SMTP would
- * also rate-limit the retry).
+ * Issues a code for one purpose and cancels whatever was open before, so two
+ * codes never work at once. A row is removed again if the mail service rejects
+ * it — a broken SMTP must not also rate-limit the retry.
  */
-export async function sendVerificationCode(
+async function issueCode(
   db: Db,
   mailer: Mailer,
   user: VerifiableUser,
-): Promise<{ status: VerificationStatus; devCode?: string }> {
-  if (await isEmailVerified(db, user.id)) {
-    throw new ApiError(409, 'already_verified', 'อีเมลนี้ยืนยันแล้ว');
-  }
+  purpose: CodePurpose,
+): Promise<{ devCode?: string }> {
   if (mailer.mode === 'disabled') {
     throw new ApiError(503, 'mail_not_configured', 'เซิร์ฟเวอร์ยังไม่ได้ตั้งค่า SMTP จึงส่งรหัสไม่ได้');
   }
 
-  const latest = await pendingCode(db, user.id);
+  const latest = await pendingCode(db, user.id, purpose);
   if (latest) {
     const waitMs = latest.created_at.getTime() + RESEND_COOLDOWN_SECONDS * 1000 - Date.now();
     if (waitMs > 0) {
@@ -139,49 +137,49 @@ export async function sendVerificationCode(
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60_000);
 
-  await db.query('update email_verification set consumed_at = now() where user_id = $1 and consumed_at is null', [
-    user.id,
-  ]);
+  await db.query(
+    'update email_verification set consumed_at = now() where user_id = $1 and purpose = $2 and consumed_at is null',
+    [user.id, purpose],
+  );
   const inserted = await db.query<{ id: string }>(
-    `insert into email_verification (user_id, code_hash, expires_at)
-     values ($1, $2, $3)
+    `insert into email_verification (user_id, code_hash, expires_at, purpose)
+     values ($1, $2, $3, $4)
      returning id`,
-    [user.id, hashCode(user.id, code), expiresAt.toISOString()],
+    [user.id, hashCode(user.id, code), expiresAt.toISOString(), purpose],
   );
   const id = inserted.rows[0]?.id;
 
   try {
-    await mailer.sendVerificationCode({
+    await mailer.sendCode({
       to: user.email,
       code,
       expiresInMinutes: CODE_TTL_MINUTES,
+      purpose,
     });
   } catch (error) {
     if (id) await db.query('delete from email_verification where id = $1', [id]);
     throw error;
   }
 
-  const status = await describeVerification(db, mailer, user);
-  return mailer.mode === 'log' ? { status, devCode: code } : { status };
+  return mailer.mode === 'log' ? { devCode: code } : {};
 }
 
-/** Confirms the newest open code and flips `app_user.email_verified`. */
-export async function confirmVerification(
+/**
+ * Checks the newest open code for a purpose and consumes it on success.
+ * Wrong guesses are counted on the row itself, so a restart cannot reset them.
+ */
+async function consumeCode(
   db: Db,
-  mailer: Mailer,
   user: VerifiableUser,
   rawCode: string,
-): Promise<VerificationStatus> {
+  purpose: CodePurpose,
+): Promise<void> {
   const code = rawCode.trim();
-  if (!/^\d{6}$/.test(code)) throw badRequest('รหัสยืนยันต้องเป็นตัวเลข 6 หลัก');
+  if (!/^\d{6}$/.test(code)) throw badRequest('รหัสต้องเป็นตัวเลข 6 หลัก');
 
-  if (await isEmailVerified(db, user.id)) {
-    return describeVerification(db, mailer, user);
-  }
-
-  const pending = await pendingCode(db, user.id);
+  const pending = await pendingCode(db, user.id, purpose);
   if (!pending) {
-    throw new ApiError(400, 'code_missing', 'ยังไม่มีรหัสที่รอยืนยัน — กดขอรหัสใหม่ก่อน');
+    throw new ApiError(400, 'code_missing', 'ยังไม่มีรหัสที่รออยู่ — กดขอรหัสใหม่ก่อน');
   }
   if (pending.expires_at.getTime() <= Date.now()) {
     await db.query('update email_verification set consumed_at = now() where id = $1', [pending.id]);
@@ -204,8 +202,52 @@ export async function confirmVerification(
   }
 
   await db.query('update email_verification set consumed_at = now() where id = $1', [pending.id]);
+}
+
+/** Sends a verification code and returns the new state. */
+export async function sendVerificationCode(
+  db: Db,
+  mailer: Mailer,
+  user: VerifiableUser,
+): Promise<{ status: VerificationStatus; devCode?: string }> {
+  if (await isEmailVerified(db, user.id)) {
+    throw new ApiError(409, 'already_verified', 'อีเมลนี้ยืนยันแล้ว');
+  }
+  const issued = await issueCode(db, mailer, user, 'verify');
+  return { status: await describeVerification(db, mailer, user), ...issued };
+}
+
+/** Confirms the newest verification code and flips `app_user.email_verified`. */
+export async function confirmVerification(
+  db: Db,
+  mailer: Mailer,
+  user: VerifiableUser,
+  rawCode: string,
+): Promise<VerificationStatus> {
+  if (await isEmailVerified(db, user.id)) {
+    return describeVerification(db, mailer, user);
+  }
+  await consumeCode(db, user, rawCode, 'verify');
   await db.query('update app_user set email_verified = true where id = $1', [user.id]);
   return describeVerification(db, mailer, user);
+}
+
+/** Sends a password-reset code. Sign-in state is untouched. */
+export async function sendPasswordResetCode(
+  db: Db,
+  mailer: Mailer,
+  user: VerifiableUser,
+): Promise<{ devCode?: string }> {
+  return issueCode(db, mailer, user, 'reset');
+}
+
+/** Consumes a reset code; the caller writes the new password hash. */
+export async function confirmPasswordResetCode(
+  db: Db,
+  user: VerifiableUser,
+  rawCode: string,
+): Promise<void> {
+  await consumeCode(db, user, rawCode, 'reset');
 }
 
 /**

@@ -13,6 +13,7 @@ import { CompressPage } from './routes/CompressPage';
 import { ConvertPage } from './routes/ConvertPage';
 import { CropPage } from './routes/CropPage';
 import { DiagnosticsPage } from './routes/DiagnosticsPage';
+import { ForgotPasswordPage } from './routes/ForgotPasswordPage';
 import { HomePage } from './routes/HomePage';
 import { JpgToPdfPage } from './routes/JpgToPdfPage';
 import { LockPage } from './routes/LockPage';
@@ -100,6 +101,9 @@ function Shell() {
       break;
     case 'signin':
       page = <AuthPage mode="signin" />;
+      break;
+    case 'forgot':
+      page = <ForgotPasswordPage />;
       break;
     case 'signup':
       page = <AuthPage mode="signup" />;

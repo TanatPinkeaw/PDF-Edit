@@ -31,7 +31,11 @@ import type { Env } from '../env.ts';
 import { ApiError, badRequest, readObjectBody, readString } from '../http.ts';
 import type { Mailer } from '../mail.ts';
 import { createSigninGuard } from '../signin-guard.ts';
-import { describeVerification } from '../verification.ts';
+import {
+  confirmPasswordResetCode,
+  describeVerification,
+  sendPasswordResetCode,
+} from '../verification.ts';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 8;
@@ -81,6 +85,9 @@ export function registerAccountRoutes(
 ): void {
   const { db, env, mailer, googleVerifier } = deps;
   const signinGuard = createSigninGuard();
+  // Reset requests are throttled per email+IP whether or not the account exists,
+  // so a 429 never reveals which addresses are registered.
+  const resetGuard = createSigninGuard({ limit: 5, windowMs: 10 * 60 * 1000 });
 
   const state = async (
     context: Awaited<ReturnType<typeof resolveContext>>,
@@ -187,6 +194,74 @@ export function registerAccountRoutes(
 
     signinGuard.reset(key);
     await adoptWorkspace(db, context, found.user, creditConfig(env));
+    await startSession(reply, found.user.id);
+    return state({ ...context, user: found.user }, found.user);
+  });
+
+  /**
+   * Always answers 202 with the same shape: whether an account exists, was just
+   * rate-limited, or the mail server refused is only visible in the server log.
+   * Otherwise this endpoint would be an account-enumeration oracle.
+   */
+  app.post('/api/auth/password/forgot', async (request, reply) => {
+    const body = readObjectBody(request.body);
+    const email = readString(body, 'email', { required: true, maxLength: 320 }) ?? '';
+    if (!EMAIL_PATTERN.test(email)) throw badRequest('อีเมลไม่ถูกต้อง');
+
+    const key = `${normalizeEmail(email)}|${request.ip}`;
+    const decision = resetGuard.check(key);
+    if (!decision.allowed) {
+      throw new ApiError(
+        429,
+        'too_many_attempts',
+        `ขอบ่อยเกินไป — ลองใหม่ในอีก ${Math.ceil(decision.retryAfterMs / 60_000)} นาที`,
+      );
+    }
+    resetGuard.fail(key);
+
+    reply.code(202);
+    const found = await findUserByEmail(db, email);
+    // Accounts created through Google have no password to reset.
+    if (!found || !found.passwordHash) return { ok: true };
+
+    try {
+      const issued = await sendPasswordResetCode(db, mailer, found.user);
+      return { ok: true, ...issued };
+    } catch (error) {
+      console.warn('[auth] ส่งรหัสตั้งรหัสผ่านใหม่ไม่สำเร็จ', error);
+      return { ok: true };
+    }
+  });
+
+  app.post('/api/auth/password/reset', async (request, reply) => {
+    const context = await resolveContext(db, request);
+    const body = readObjectBody(request.body);
+    const email = readString(body, 'email', { required: true, maxLength: 320 }) ?? '';
+    const code = readString(body, 'code', { required: true, maxLength: 12 }) ?? '';
+    const password = readPassword(body, { checkStrength: true });
+
+    const found = await findUserByEmail(db, email);
+    if (!found || !found.passwordHash) {
+      // Same wording and roughly the same cost as a bad code.
+      await burnPasswordCheck(password);
+      throw new ApiError(400, 'code_invalid', 'รหัสไม่ถูกต้องหรือหมดอายุ');
+    }
+
+    await confirmPasswordResetCode(db, found.user, code);
+    const passwordHash = await hashPassword(password);
+    await db.query('update app_user set password_hash = $2 where id = $1', [
+      found.user.id,
+      passwordHash,
+    ]);
+    // The old password is gone, so every existing session goes with it.
+    await db.query('delete from auth_session where user_id = $1', [found.user.id]);
+    await db.query(
+      'update email_verification set consumed_at = now() where user_id = $1 and consumed_at is null',
+      [found.user.id],
+    );
+
+    // No workspace adoption here: the request may come from a browser that is
+    // signed in as someone else, and its history must not move accounts.
     await startSession(reply, found.user.id);
     return state({ ...context, user: found.user }, found.user);
   });

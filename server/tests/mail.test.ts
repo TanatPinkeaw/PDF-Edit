@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/http.ts';
 import { createMailer } from '../src/mail.ts';
 
-const mail = { to: 'member@example.com', code: '123456', expiresInMinutes: 10 };
+const mail = { to: 'member@example.com', code: '123456', expiresInMinutes: 10, purpose: 'verify' as const };
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -14,7 +14,7 @@ describe('createMailer', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     const mailer = createMailer({ smtpUrl: null, mailFrom: 'x@y.z', isProduction: false });
 
-    await mailer.sendVerificationCode(mail);
+    await mailer.sendCode(mail);
 
     expect(mailer.mode).toBe('log');
     expect(mailer.enforced).toBe(true);
@@ -27,7 +27,7 @@ describe('createMailer', () => {
 
     expect(mailer.mode).toBe('disabled');
     expect(mailer.enforced).toBe(false);
-    await expect(mailer.sendVerificationCode(mail)).rejects.toMatchObject({
+    await expect(mailer.sendCode(mail)).rejects.toMatchObject({
       statusCode: 503,
       code: 'mail_not_configured',
     });
@@ -42,7 +42,7 @@ describe('createMailer', () => {
     });
 
     expect(mailer.mode).toBe('smtp');
-    await expect(mailer.sendVerificationCode(mail)).rejects.toSatisfy(
+    await expect(mailer.sendCode(mail)).rejects.toSatisfy(
       (error: unknown) => error instanceof ApiError && error.code === 'mail_failed',
     );
   });
