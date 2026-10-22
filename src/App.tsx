@@ -1,7 +1,9 @@
 import { useEffect, type ReactNode } from 'react';
 
+import { AccountBadge } from './components/AccountBadge';
+import { ClearFileButton } from './components/ClearFileButton';
 import { PasswordDialog } from './components/PasswordDialog';
-import { CreditBadge } from './components/CreditBadge';
+import { RequireSignIn } from './components/RequireSignIn';
 import { ShareStrip } from './components/ShareStrip';
 import { SignInButton } from './components/SignInButton';
 import { VerifyEmailBar } from './components/VerifyEmailBar';
@@ -27,6 +29,27 @@ import { SignPage } from './routes/SignPage';
 import { WatermarkPage } from './routes/WatermarkPage';
 import { AccountProvider } from './state/account-context';
 import { WorkspaceProvider, useWorkspace } from './state/workspace-context';
+
+/**
+ * Routes that need an account. The tools are free, so the sign-in is the whole
+ * gate; shared links stay public because the recipient may have no account.
+ */
+const GATED_SECTIONS = new Set([
+  'organize',
+  'merge',
+  'rotate',
+  'page-numbers',
+  'watermark',
+  'lock',
+  'jpg-to-pdf',
+  'sign',
+  'crop',
+  'compress',
+  'word-to-pdf',
+  'pdf-to-word',
+  'activity',
+  'password',
+]);
 
 function NotFoundPage() {
   return (
@@ -147,14 +170,15 @@ function Shell() {
         </nav>
 
         <div className="header-actions">
-          <CreditBadge />
+          <ClearFileButton />
+          <AccountBadge />
           <SignInButton />
         </div>
       </header>
 
       <VerifyEmailBar />
 
-      {page}
+      {GATED_SECTIONS.has(section) ? <RequireSignIn>{page}</RequireSignIn> : page}
 
       <footer className="app-footer">
         <span>ไฟล์ประมวลผลในเครื่องคุณ · เซิร์ฟเวอร์เก็บเฉพาะ metadata ของงาน</span>

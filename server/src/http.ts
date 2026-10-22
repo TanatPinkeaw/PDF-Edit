@@ -3,6 +3,7 @@
 export type ApiErrorCode =
   | 'invalid_request'
   | 'unauthorized'
+  | 'sign_in_required'
   | 'forbidden_origin'
   | 'not_found'
   | 'email_taken'

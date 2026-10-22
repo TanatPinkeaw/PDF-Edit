@@ -6,6 +6,7 @@ import { downloadBytes } from '../lib/download';
 import { historyFileName, runsToCsv, runsToJson } from '../lib/history-export';
 import { saveReplay } from '../lib/replay';
 import { navigate } from '../lib/router';
+import { RUN_FILE_TTL_DAYS, clearRunFiles, listRunFileIds, loadRunFile } from '../lib/run-files';
 import { formatBytes } from '../lib/share';
 import { READY_TOOLS, toolTitle } from '../lib/tools';
 import { useAccount } from '../state/account-context';
@@ -58,6 +59,7 @@ export function ActivityPage() {
     status: accountStatus,
     user,
     credits,
+    creditsEnabled,
     recentEntries,
     busy: accountBusy,
     refresh,
@@ -73,11 +75,19 @@ export function ActivityPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Runs whose output still exists in this browser's IndexedDB.
+  const [localFiles, setLocalFiles] = useState<Set<string>>(new Set());
+  const [retentionDays, setRetentionDays] = useState(RUN_FILE_TTL_DAYS);
+  const [fileNotice, setFileNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const response = await apiFetch<{ runs: RunRecord[] }>('/api/runs?limit=50');
+      const response = await apiFetch<{ runs: RunRecord[]; retentionDays?: number }>(
+        '/api/runs?limit=50',
+      );
       setRuns(response.runs);
+      setRetentionDays(response.retentionDays ?? RUN_FILE_TTL_DAYS);
+      setLocalFiles(await listRunFileIds());
       setError(null);
     } catch (loadError) {
       setRuns([]);
@@ -102,7 +112,11 @@ export function ActivityPage() {
     setBusy(true);
     try {
       await apiFetch('/api/runs', { method: 'DELETE' });
+      // The download copies live in this browser; drop them with the rows.
+      await clearRunFiles();
       setRuns([]);
+      setLocalFiles(new Set());
+      setFileNotice(null);
       setConfirmClear(false);
     } catch (clearError) {
       setError(clearError instanceof Error ? clearError.message : 'ล้างประวัติไม่สำเร็จ');
@@ -115,7 +129,10 @@ export function ActivityPage() {
     setBusy(true);
     try {
       await deleteEverything();
+      await clearRunFiles();
       setRuns([]);
+      setLocalFiles(new Set());
+      setFileNotice(null);
       setConfirmDeleteAll(false);
       await refresh();
     } catch (deleteError) {
@@ -133,6 +150,24 @@ export function ActivityPage() {
       new TextEncoder().encode(content),
       format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json;charset=utf-8',
     );
+  };
+
+  const downloadRun = async (run: RunRecord) => {
+    setFileNotice(null);
+    const file = await loadRunFile(run.id);
+    if (!file) {
+      setLocalFiles((current) => {
+        const next = new Set(current);
+        next.delete(run.id);
+        return next;
+      });
+      setFileNotice(
+        'ไฟล์ของงานนี้ไม่ได้อยู่ในเบราว์เซอร์นี้แล้ว — อาจถูกสร้างจากเครื่องอื่น หรือถูกล้างไปก่อน',
+      );
+      return;
+    }
+    downloadBytes(file.name, file.bytes, file.mime);
+    setFileNotice(`ดาวน์โหลด ${file.name} แล้ว`);
   };
 
   const rerun = (run: RunRecord) => {
@@ -204,12 +239,14 @@ export function ActivityPage() {
             <div>
               <span className="field-label">บัญชี</span>
               <p className="activity-account-name">
-                {user ? user.email : 'ไม่ระบุตัวตน (เครดิตผูกกับเบราว์เซอร์นี้)'}
+                {user ? user.email : 'ไม่ระบุตัวตน (ยังไม่ได้เข้าสู่ระบบ)'}
               </p>
             </div>
-            <p className="credit-balance-line">
-              <strong>{credits.balance}</strong> เครดิต
-            </p>
+            {creditsEnabled && credits && (
+              <p className="credit-balance-line">
+                <strong>{credits.balance}</strong> เครดิต
+              </p>
+            )}
             {user ? (
               <a className="button-ghost" href="#/password">
                 เปลี่ยนรหัสผ่าน
@@ -271,6 +308,7 @@ export function ActivityPage() {
           </div>
         </section>
 
+        {creditsEnabled && credits && (
         <section className="panel credit-panel">
           <header className="panel-head">
             <h2>เครดิต</h2>
@@ -324,11 +362,13 @@ export function ActivityPage() {
           )}
           <p className="hint">ยังไม่มีระบบจ่ายเงิน — ขอโค้ดจากผู้ดูแล หรือให้แอดมินเติมผ่าน CLI</p>
         </section>
+        )}
 
         {accountStatus === 'offline' && (
           <p className="form-error">เชื่อมต่อ API ไม่ได้ — ประวัติจะแสดงได้เมื่อเซิร์ฟเวอร์พร้อม</p>
         )}
         {error && <p className="form-error">{error}</p>}
+        {fileNotice && <p className="credit-ok">{fileNotice}</p>}
 
         <section className="panel">
           <header className="panel-head">
@@ -353,8 +393,9 @@ export function ActivityPage() {
           </header>
 
           <p className="hint">
-            ดาวน์โหลดได้เฉพาะรายการที่แสดงอยู่ (กรองแล้ว {visible.length} รายการ) — ประวัติเก็บเฉพาะ
-            metadata ไม่มีไฟล์ PDF จึงโหลดไฟล์ผลลัพธ์ย้อนหลังไม่ได้
+            เก็บย้อนหลัง {retentionDays} วัน · ไฟล์ผลลัพธ์ถูกเก็บในเบราว์เซอร์นี้ (ไม่อัปโหลด)
+            จึงกดดาวน์โหลดซ้ำได้จากงานที่รันบนเครื่องนี้ — ถ้าล้างข้อมูลเบราว์เซอร์หรือเปลี่ยนเครื่อง
+            จะเหลือเพียงรายละเอียดของงาน
           </p>
 
           {runs === null ? (
@@ -389,6 +430,21 @@ export function ActivityPage() {
                       <span>
                         {(run.durationMs / 1000).toFixed(run.durationMs < 10_000 ? 2 : 0)} วินาที
                       </span>
+                    )}
+                    {run.status === 'succeeded' && run.outputName && (
+                      <button
+                        type="button"
+                        className="button-secondary"
+                        onClick={() => void downloadRun(run)}
+                        disabled={!localFiles.has(run.id)}
+                        title={
+                          localFiles.has(run.id)
+                            ? `ดาวน์โหลด ${run.outputName} อีกครั้ง`
+                            : 'ไฟล์ของงานนี้ไม่ได้อยู่ในเบราว์เซอร์นี้'
+                        }
+                      >
+                        ดาวน์โหลด
+                      </button>
                     )}
                     {REPLAYABLE.has(run.tool) && (
                       <button

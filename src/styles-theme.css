@@ -707,6 +707,231 @@ pre {
   max-height: 120px;
 }
 
+/* ---------- sign studio (paste, drag, page ranges) ---------- */
+
+.sign-studio {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+
+.sign-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sign-stage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+
+.sign-page-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sign-page-nav .button-secondary {
+  padding: 4px 10px;
+}
+
+.sign-page-nav input {
+  width: 56px;
+  padding: 4px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  text-align: center;
+  font-family: var(--mono);
+}
+
+.sign-stage-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sign-stage {
+  position: relative;
+  width: min(100%, 640px);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 2px solid var(--ink);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 4px 4px 0 rgba(20, 17, 13, 0.8);
+  touch-action: none;
+  user-select: none;
+}
+
+.sign-stage[data-placing] {
+  cursor: crosshair;
+}
+
+.sign-stage-page {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+.sign-stage-empty {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 3 / 4;
+}
+
+.sign-stage-error {
+  margin: 0;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.sign-mark {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 0;
+  border: 2px dashed rgba(20, 17, 13, 0.28);
+  border-radius: 4px;
+  background: rgba(255, 240, 200, 0.28);
+  cursor: grab;
+  touch-action: none;
+}
+
+/* A forgiving grab area: the signature can be picked up slightly outside its
+   own box, so thin or small signatures are still easy to drag. */
+.sign-mark::before {
+  content: '';
+  position: absolute;
+  inset: -16px;
+  border-radius: 10px;
+}
+
+.sign-mark img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+.sign-mark:hover {
+  border-color: var(--accent-dark);
+}
+
+.sign-mark:hover::before,
+.sign-mark:focus-visible::before {
+  background: rgba(255, 178, 56, 0.12);
+}
+
+.sign-mark[aria-pressed='true'] {
+  border-color: var(--accent-dark);
+  background: rgba(255, 240, 200, 0.5);
+  box-shadow: 0 0 0 3px rgba(255, 178, 56, 0.35);
+}
+
+.sign-mark:focus-visible {
+  outline: 3px solid var(--accent-dark);
+  outline-offset: 2px;
+}
+
+.sign-mark:active {
+  cursor: grabbing;
+}
+
+.sign-tray {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  gap: 8px;
+}
+
+.sign-tray li {
+  position: relative;
+}
+
+.sign-tray-item {
+  width: 100%;
+  height: 62px;
+  padding: 4px;
+  border: 2px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fffdf4;
+}
+
+.sign-tray-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.sign-tray-item[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--accent-soft);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.sign-tray-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.sign-tray-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sign-tray-actions button {
+  flex: 1;
+}
+
+.sign-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.sign-range input {
+  width: 100%;
+}
+
+.sign-remove {
+  padding: 2px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.sign-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+@media (max-width: 900px) {
+  .sign-studio {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 860px) {
   .simple-grid {
     grid-template-columns: minmax(0, 1fr);

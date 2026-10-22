@@ -195,45 +195,88 @@ describe('email verification', () => {
 });
 
 describe('credit gate', () => {
-  it('blocks runs and redemption until the email is verified', async () => {
-    const headers = await signUp();
-
-    const blockedRun = await runOnce(headers);
-    expect(blockedRun.statusCode).toBe(403);
-    expect(blockedRun.json().error.code).toBe('email_unverified');
-
-    const blockedRedeem = await app.inject({
-      method: 'POST',
-      url: '/api/credits/redeem',
-      headers,
-      payload: { code: 'ANY-CODE' },
+  // The mailbox gate belongs to credit mode; the shipped free mode must never
+  // demand a verification code before running a tool.
+  it('blocks runs and redemption until the email is verified (credit mode)', async () => {
+    const created = await createTestApp({
+      db,
+      env: testEnv({ CREDITS_ENABLED: 'true', REQUIRE_SIGN_IN: 'false' }),
     });
-    expect(blockedRedeem.statusCode).toBe(403);
 
-    await sendCode(headers);
-    const ok = await confirm(headers, mailer.lastCode());
-    expect(ok.statusCode).toBe(200);
+    try {
+      const token = workspaceToken();
+      const signup = await created.app.inject({
+        method: 'POST',
+        url: '/api/auth/signup',
+        headers: originHeaders(token),
+        payload: { email: 'gate@example.com', password: PASSWORD },
+      });
+      expect(signup.statusCode).toBe(201);
+      const headers = { ...originHeaders(token), cookie: sessionCookie(signup) };
 
-    const allowed = await runOnce(headers);
-    expect(allowed.statusCode).toBe(201);
-    expect(allowed.json().credits.balance).toBe(19);
+      const blockedRun = await created.app.inject({
+        method: 'POST',
+        url: '/api/runs',
+        headers,
+        payload: { tool: 'organize', params: { action: 'download' } },
+      });
+      expect(blockedRun.statusCode).toBe(403);
+      expect(blockedRun.json().error.code).toBe('email_unverified');
+
+      const blockedRedeem = await created.app.inject({
+        method: 'POST',
+        url: '/api/credits/redeem',
+        headers,
+        payload: { code: 'ANY-CODE' },
+      });
+      expect(blockedRedeem.statusCode).toBe(403);
+
+      const sent = await created.app.inject({
+        method: 'POST',
+        url: '/api/auth/verify/send',
+        headers,
+      });
+      expect(sent.statusCode).toBe(202);
+      const code = sent.json().devCode as string;
+      const ok = await created.app.inject({
+        method: 'POST',
+        url: '/api/auth/verify/confirm',
+        headers,
+        payload: { code },
+      });
+      expect(ok.statusCode).toBe(200);
+
+      const allowed = await created.app.inject({
+        method: 'POST',
+        url: '/api/runs',
+        headers,
+        payload: { tool: 'organize', params: { action: 'download' } },
+      });
+      expect(allowed.statusCode).toBe(201);
+      expect(allowed.json().credits.balance).toBe(19);
+    } finally {
+      await created.app.close();
+    }
   });
 
-  it('never asks an anonymous browser to verify a mailbox', async () => {
-    const headers = originHeaders(workspaceToken());
+  it('never asks a signed-in member to verify while credits are shelved', async () => {
+    const headers = await signUp('free@example.com');
 
     const run = await runOnce(headers);
     expect(run.statusCode).toBe(201);
+    expect(run.json().credits).toBeNull();
 
     const bootstrap = await app.inject({ method: 'POST', url: '/api/bootstrap', headers });
-    expect(bootstrap.json().verification).toBeNull();
+    expect(bootstrap.json().verification).toMatchObject({ verified: false });
+    expect(bootstrap.json().creditsEnabled).toBe(false);
   });
 
   it('stays open when the deployment has no SMTP configured', async () => {
     // `createMailer` turns itself off in production without SMTP_URL; this is
     // the same shape, injected so the test needs no real mail settings.
     const created = await createTestApp({
-      env: testEnv({ NODE_ENV: 'production' }),
+      db,
+      env: testEnv({ NODE_ENV: 'production', CREDITS_ENABLED: 'true', REQUIRE_SIGN_IN: 'false' }),
       mailer: {
         mode: 'disabled',
         enforced: false,

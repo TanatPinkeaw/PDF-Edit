@@ -1,6 +1,9 @@
 /** Typed fetch wrapper for the local API, plus the anonymous workspace token. */
 
-/** Every recorded run costs one credit; members keep the wallet on their account. */
+/**
+ * The wallet, only present while credits are enabled. It is shelved by
+ * default: runs are free and the server returns null instead.
+ */
 export type Credits = {
   balance: number;
   /** Anonymous browsers only: the one-off allowance they started with. */
@@ -49,7 +52,12 @@ export type VerificationStatus = {
 export type AccountSnapshot = {
   workspaceId: string | null;
   user: PublicUser | null;
-  credits: Credits;
+  /** Null in the shipped free mode. */
+  credits: Credits | null;
+  /** False while the credit system is shelved (the default). */
+  creditsEnabled: boolean;
+  /** True when a tool may not run without signing in (the default). */
+  requireSignIn: boolean;
   recentEntries: CreditEntry[];
   /** Null for anonymous browsers: there is no mailbox to prove. */
   verification: VerificationStatus | null;
@@ -217,8 +225,6 @@ export function isCredits(value: unknown): value is Credits {
   const credits = value as Partial<Credits>;
   return typeof credits.balance === 'number' && typeof credits.member === 'boolean';
 }
-
-export const DEFAULT_CREDITS: Credits = { balance: 3, allowance: 3, member: false };
 
 export function formatCredits(credits: Credits): string {
   return credits.balance === 1 ? 'เหลือ 1 เครดิต' : `เหลือ ${credits.balance} เครดิต`;

@@ -14,12 +14,20 @@ function describe(error: unknown): string {
 }
 
 /**
- * Shown to signed-in members whose email is not verified yet: the wallet cannot
- * be spent until the six-digit code is confirmed. Disappears on success, and
- * never renders for anonymous browsers or deployments without SMTP.
+ * Credit-mode only: while credits are shelved nothing is gated on a verified
+ * mailbox, so the bar stays hidden. Disappears on success, and never renders
+ * for anonymous browsers or deployments without SMTP.
  */
 export function VerifyEmailBar() {
-  const { user, verification, devCode, busy, sendVerificationCode, confirmEmailCode } = useAccount();
+  const {
+    user,
+    verification,
+    creditsEnabled,
+    devCode,
+    busy,
+    sendVerificationCode,
+    confirmEmailCode,
+  } = useAccount();
   const [code, setCode] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [, setTick] = useState(0);
@@ -33,7 +41,9 @@ export function VerifyEmailBar() {
     return () => window.clearInterval(id);
   }, [pending, verification?.resendAt]);
 
-  if (!user || !verification || verification.verified || !verification.enforced) return null;
+  if (!creditsEnabled || !user || !verification || verification.verified || !verification.enforced) {
+    return null;
+  }
 
   const cooldown = secondsUntil(verification.resendAt);
 

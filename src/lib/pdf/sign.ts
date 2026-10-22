@@ -1,9 +1,12 @@
 /**
- * Stamps a drawn or uploaded signature image onto pages. The signature is
- * flattened into the page content, so it looks the same in every viewer.
+ * Stamps drawn, uploaded or pasted signature images onto pages. Each signature
+ * has its own free position expressed in page-relative coordinates, so one
+ * document can carry several signatures over overlapping page ranges. Every
+ * signature is flattened into the page content, so it looks the same in every
+ * viewer.
  */
 
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, type PDFImage } from '@cantoo/pdf-lib';
 
 export type SignatureCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
 
@@ -25,6 +28,52 @@ export const DEFAULT_SIGN_OPTIONS: SignOptions = {
 };
 
 export type SignaturePlacement = { x: number; y: number; width: number; height: number };
+
+export type NormalizedStamp = {
+  /** Image centre, 0–1 from the left edge of the page. */
+  x: number;
+  /** Image centre, 0–1 from the top edge of the page. */
+  y: number;
+  /** Image width as a fraction of the page width (0.05 – 0.9). */
+  widthRatio: number;
+};
+
+export type SignatureStamp = NormalizedStamp & {
+  png: Uint8Array;
+  /** 1-based inclusive page range. */
+  fromPage: number;
+  toPage: number;
+};
+
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Converts a page-relative signature position into PDF points, keeping the
+ * image fully inside the page. `y` comes from the top; PDF measures from the
+ * bottom, so it is flipped here.
+ */
+export function planStamp(
+  pageWidth: number,
+  pageHeight: number,
+  imageWidth: number,
+  imageHeight: number,
+  stamp: NormalizedStamp,
+): SignaturePlacement {
+  const width = pageWidth * clamp(stamp.widthRatio, 0.05, 0.9);
+  const height = imageWidth > 0 ? (imageHeight / imageWidth) * width : width;
+  const centreX = clamp(stamp.x, 0, 1) * pageWidth;
+  const centreFromTop = clamp(stamp.y, 0, 1) * pageHeight;
+
+  return {
+    x: clamp(centreX - width / 2, 0, Math.max(0, pageWidth - width)),
+    y: clamp(pageHeight - centreFromTop - height / 2, 0, Math.max(0, pageHeight - height)),
+    width,
+    height,
+  };
+}
 
 export function planSignature(
   pageWidth: number,
@@ -78,5 +127,47 @@ export async function signPdf(
   }
 
   if (stamped === 0) throw new Error('ไม่พบหน้าที่จะเซ็นในไฟล์นี้');
+  return doc.save();
+}
+
+/**
+ * Stamps any number of signatures at free positions. Each image is embedded
+ * once per document, even when it appears on many pages or several times.
+ */
+export async function stampSignatures(
+  bytes: Uint8Array,
+  stamps: readonly SignatureStamp[],
+): Promise<Uint8Array> {
+  if (stamps.length === 0) throw new Error('ยังไม่มีลายเซ็นที่จะวาง');
+  for (const stamp of stamps) {
+    if (stamp.png.byteLength === 0) throw new Error('ลายเซ็นต้องเป็น PNG ที่มีข้อมูล');
+  }
+
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  const embedded = new Map<Uint8Array, PDFImage>();
+  const pages = doc.getPages();
+  let stamped = 0;
+
+  for (const [index, page] of pages.entries()) {
+    const pageNumber = index + 1;
+    const { width, height } = page.getSize();
+
+    for (const stamp of stamps) {
+      const from = Math.min(stamp.fromPage, stamp.toPage);
+      const to = Math.max(stamp.fromPage, stamp.toPage);
+      if (pageNumber < from || pageNumber > to) continue;
+
+      let image = embedded.get(stamp.png);
+      if (!image) {
+        image = await doc.embedPng(stamp.png);
+        embedded.set(stamp.png, image);
+      }
+
+      page.drawImage(image, planStamp(width, height, image.width, image.height, stamp));
+      stamped += 1;
+    }
+  }
+
+  if (stamped === 0) throw new Error('ช่วงหน้าที่เลือกไม่มีหน้าอยู่ในไฟล์นี้');
   return doc.save();
 }

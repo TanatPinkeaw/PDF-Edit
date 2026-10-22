@@ -37,11 +37,9 @@ afterAll(async () => {
 });
 
 describe('Google sign-in', () => {
-  it('signs in and carries the anonymous workspace over', async () => {
+  it('signs in and carries the browser workspace over', async () => {
     const token = workspaceToken();
     const headers = originHeaders(token);
-
-    await app.inject({ method: 'POST', url: '/api/runs', headers, payload: { tool: 'rotate' } });
 
     const signIn = await app.inject({
       method: 'POST',
@@ -55,8 +53,10 @@ describe('Google sign-in', () => {
       email: 'tester@example.com',
       name: 'Tester',
     });
-    expect(signIn.json().credits).toMatchObject({ member: true, allowance: null });
-    expect(signIn.json().credits.balance).toBeGreaterThanOrEqual(20);
+    // Free mode: a fresh account gets no wallet and no balance.
+    expect(signIn.json().credits).toBeNull();
+    expect(signIn.json().creditsEnabled).toBe(false);
+    expect(signIn.json().requireSignIn).toBe(true);
 
     const cookie = sessionCookie(signIn);
     expect(cookie).toMatch(/^pdfstudio_session=/);
@@ -64,11 +64,13 @@ describe('Google sign-in', () => {
     const me = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie } });
     expect(me.statusCode).toBe(200);
     expect(me.json().user.email).toBe('tester@example.com');
-    expect(me.json().credits).toMatchObject({ member: true, allowance: null });
+    expect(me.json().credits).toBeNull();
     expect(me.json().authConfigured).toBe(true);
 
     const history = await app.inject({ method: 'GET', url: '/api/runs', headers: { cookie } });
-    expect(history.json().runs).toHaveLength(1);
+    expect(history.json().runs).toHaveLength(0);
+    const wallets = await db.query('select 1 from credit_wallet');
+    expect(wallets.rowCount).toBe(0);
 
     const workspace = await db.query<{ user_id: string | null }>(
       'select user_id from workspace where user_id is not null',
@@ -76,7 +78,7 @@ describe('Google sign-in', () => {
     expect(workspace.rowCount).toBe(1);
   });
 
-  it('spends the member credits rather than the anonymous allowance', async () => {
+  it('lets a signed-in account run without a limit and without a wallet', async () => {
     const headers = originHeaders(workspaceToken());
     const signIn = await app.inject({
       method: 'POST',
@@ -86,7 +88,7 @@ describe('Google sign-in', () => {
     });
     const cookie = sessionCookie(signIn);
 
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 12; index += 1) {
       const response = await app.inject({
         method: 'POST',
         url: '/api/runs',
@@ -94,10 +96,13 @@ describe('Google sign-in', () => {
         payload: { tool: 'watermark' },
       });
       expect(response.statusCode).toBe(201);
+      expect(response.json().credits).toBeNull();
     }
 
     const me = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie } });
-    expect(me.json().credits.balance).toBe(15);
+    expect(me.json().credits).toBeNull();
+    const wallets = await db.query('select 1 from credit_wallet');
+    expect(wallets.rowCount).toBe(0);
   });
 
   it('rejects a credential the verifier does not accept', async () => {
@@ -148,7 +153,7 @@ describe('Google sign-in', () => {
 
     const me = await app.inject({ method: 'GET', url: '/api/me', headers });
     expect(me.json().user).toBeNull();
-    expect(me.json().credits.member).toBe(false);
+    expect(me.json().credits).toBeNull();
   });
 
   it('keeps separate Google accounts separate', async () => {

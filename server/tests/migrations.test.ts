@@ -43,6 +43,7 @@ describe('migrations', () => {
       expect.arrayContaining([
         'job_run_workspace_started_idx',
         'job_run_running_idx',
+        'job_run_started_idx',
         'share_link_expiry_idx',
         'workspace_user_idx',
         'app_user_email_lower_key',

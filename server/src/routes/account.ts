@@ -62,24 +62,28 @@ function readPassword(body: Record<string, unknown>, options: { checkStrength: b
 }
 
 /**
- * Opens the member wallet (which grants the signup bonus exactly once), turns
- * the current browser into the account's workspace and merges whatever is left
- * of the anonymous allowance.
+ * Turns the current browser into the account's workspace. While credits are
+ * shelved no wallet is opened or merged — that ledger simply stays dormant.
  */
 async function adoptWorkspace(
   db: Db,
+  env: Env,
   context: Awaited<ReturnType<typeof resolveContext>>,
   user: PublicUser,
   config: CreditConfig,
 ): Promise<void> {
-  await openWallet(
-    db,
-    { ...context, user },
-    { credits: config.signupBonus, reason: 'signup_bonus' },
-  );
+  if (env.creditsEnabled) {
+    await openWallet(
+      db,
+      { ...context, user },
+      { credits: config.signupBonus, reason: 'signup_bonus' },
+    );
+  }
   if (!context.workspaceId) return;
   await attachWorkspaceToUser(db, context.workspaceId, user.id);
-  await mergeAnonymousWallet(db, context.workspaceId, user.id);
+  if (env.creditsEnabled) {
+    await mergeAnonymousWallet(db, context.workspaceId, user.id);
+  }
 }
 
 export function registerAccountRoutes(
@@ -100,24 +104,33 @@ export function registerAccountRoutes(
   ) => {
     const resolved = user === context.user ? context : { ...context, user };
     const grant: CreditConfig = creditConfig(env);
-    const wallet = await openWallet(
-      db,
-      resolved,
-      resolved.user
-        ? { credits: grant.signupBonus, reason: 'signup_bonus' }
-        : { credits: grant.anonCredits, reason: 'anon_grant' },
-    );
-    const credits: Credits = {
-      balance: wallet.balance,
-      allowance: resolved.user ? null : grant.anonCredits,
-      member: resolved.user !== null,
-    };
+
+    // Free mode leaves the wallet untouched: no grant, no ledger, no balance.
+    let credits: Credits | null = null;
+    let recentEntries: Awaited<ReturnType<typeof listCreditEntries>> = [];
+    if (env.creditsEnabled) {
+      const wallet = await openWallet(
+        db,
+        resolved,
+        resolved.user
+          ? { credits: grant.signupBonus, reason: 'signup_bonus' }
+          : { credits: grant.anonCredits, reason: 'anon_grant' },
+      );
+      credits = {
+        balance: wallet.balance,
+        allowance: resolved.user ? null : grant.anonCredits,
+        member: resolved.user !== null,
+      };
+      recentEntries = await listCreditEntries(db, wallet.id, 5);
+    }
 
     return {
       workspaceId: resolved.workspaceId,
       user: resolved.user,
       credits,
-      recentEntries: await listCreditEntries(db, wallet.id, 5),
+      creditsEnabled: env.creditsEnabled,
+      requireSignIn: env.requireSignIn,
+      recentEntries,
       // Anonymous browsers have no mailbox, so there is nothing to verify.
       verification: resolved.user ? await describeVerification(db, mailer, resolved.user) : null,
       // Null for anonymous browsers; false means Google-only, so no password UI.
@@ -162,7 +175,7 @@ export function registerAccountRoutes(
       passwordHash,
     });
 
-    await adoptWorkspace(db, context, user, creditConfig(env));
+    await adoptWorkspace(db, env, context, user, creditConfig(env));
     await startSession(reply, user.id);
     reply.code(201);
     return state({ ...context, user }, user);
@@ -200,7 +213,7 @@ export function registerAccountRoutes(
     }
 
     signinGuard.reset(key);
-    await adoptWorkspace(db, context, found.user, creditConfig(env));
+    await adoptWorkspace(db, env, context, found.user, creditConfig(env));
     await startSession(reply, found.user.id);
     return state({ ...context, user: found.user }, found.user);
   });
@@ -345,7 +358,7 @@ export function registerAccountRoutes(
     const profile = await googleVerifier(credential ?? '');
     const user = await upsertUser(db, profile);
 
-    await adoptWorkspace(db, context, user, creditConfig(env));
+    await adoptWorkspace(db, env, context, user, creditConfig(env));
     await startSession(reply, user.id);
 
     return state({ ...context, user }, user);

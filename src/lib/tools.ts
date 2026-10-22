@@ -123,7 +123,7 @@ export const READY_TOOLS: ToolDefinition[] = [
   {
     slug: 'sign',
     title: 'Sign PDF',
-    description: 'วางลายเซ็น PNG เลือกมุม ขนาด และหน้าเป้าหมาย',
+    description: 'วางลายเซ็นได้หลายอัน ลากจัดตำแหน่ง เลือกช่วงหน้า หรือวางจากคลิปบอร์ด',
     status: 'ready',
     icon: 'sign',
     href: '#/sign',

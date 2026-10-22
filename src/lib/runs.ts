@@ -8,6 +8,8 @@
  */
 
 import { ApiError, apiFetch, isCredits, type Credits } from './api';
+import { mimeForName } from './download';
+import { saveRunFile } from './run-files';
 
 export const CREDITS_EVENT = 'pdfstudio:credits';
 
@@ -96,6 +98,14 @@ export async function beginRun(
 }
 
 export async function completeRun(runId: string, output: ToolOutput): Promise<void> {
+  // Keep the output in this browser first, so the history entry stays
+  // downloadable even when the API call below fails. Nothing is uploaded.
+  await saveRunFile(runId, {
+    name: output.name,
+    bytes: output.bytes,
+    mime: output.mime ?? mimeForName(output.name),
+  });
+
   try {
     const response = await apiFetch<{ credits: Credits }>(`/api/runs/${runId}`, {
       method: 'PATCH',

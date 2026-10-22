@@ -3,6 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 import type { Thumbnails } from '../hooks/useThumbnails';
+import { GrabIcon } from './GrabIcon';
 import type { PageEntry, ToggleMode } from '../lib/session';
 import type { CSSProperties } from 'react';
 
@@ -138,7 +139,7 @@ export function PageCard({
             aria-label={`ลากเพื่อย้ายหน้า ${position}`}
             title="ลากเพื่อย้ายลำดับ"
           >
-            ⠿
+            <GrabIcon />
           </button>
         )}
 

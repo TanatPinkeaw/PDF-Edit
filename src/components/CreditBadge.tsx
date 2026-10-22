@@ -1,7 +1,13 @@
 import { useAccount } from '../state/account-context';
 
+/**
+ * Credit-mode header badge. The wallet is shelved by default, so this renders
+ * nothing and `AccountBadge` shows who is signed in instead.
+ */
 export function CreditBadge() {
-  const { status, credits, user } = useAccount();
+  const { status, credits, creditsEnabled, user } = useAccount();
+
+  if (!creditsEnabled || !credits) return null;
 
   if (status === 'offline') {
     return (

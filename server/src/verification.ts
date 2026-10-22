@@ -251,8 +251,9 @@ export async function confirmPasswordResetCode(
 }
 
 /**
- * The product gate: an unverified member cannot charge a run or redeem credits.
- * Signed-out browsers never reach it — their allowance is already one-off.
+ * Credit-mode gate: an unverified member cannot charge a run or redeem credits.
+ * Only called while credits are enabled — in free mode there is nothing to
+ * protect, so the mailbox is never demanded.
  */
 export async function assertCanSpendCredits(
   db: Db,

@@ -3,7 +3,7 @@ import { READY_TOOLS, UPCOMING_TOOLS } from '../lib/tools';
 import { useAccount } from '../state/account-context';
 
 export function HomePage() {
-  const { user, credits } = useAccount();
+  const { user } = useAccount();
 
   return (
     <main className="home">
@@ -20,8 +20,8 @@ export function HomePage() {
         </p>
 
         <div className="home-actions">
-          <a className="button-primary button-large" href="#/organize">
-            เปิดไฟล์ PDF
+          <a className="button-primary button-large" href={user ? '#/organize' : '#/signin'}>
+            {user ? 'เปิดไฟล์ PDF' : 'เข้าสู่ระบบเพื่อเริ่มใช้'}
           </a>
           <a className="button-secondary" href="#/activity">
             ประวัติการใช้งาน
@@ -30,21 +30,22 @@ export function HomePage() {
 
         <ul className="home-facts">
           <li>ไม่อัปโหลดไฟล์</li>
-          <li>{user ? `สมาชิก · ${credits.balance} เครดิต` : `ทดลองฟรี ${credits.allowance ?? credits.balance} เครดิต`}</li>
+          <li>ใช้ฟรีไม่จำกัด</li>
           <li>PostgreSQL เก็บประวัติและพรีเซ็ต</li>
         </ul>
 
-        {!user && credits.balance === 0 && (
+        {!user && (
           <div className="home-quota">
             <p>
-              เครดิตทดลองหมดแล้ว — สมัครสมาชิกเพื่อรับเครดิตเริ่มต้น หรือใช้โค้ดเติมเครดิตจากหน้าประวัติ
+              เข้าสู่ระบบด้วยบัญชี Google (หรืออีเมล) แล้วใช้เครื่องมือได้ฟรีไม่จำกัด —
+              ไม่มีเครดิตและไม่มีโควตารายวัน
             </p>
             <div className="home-actions">
-              <a className="button-primary" href="#/signup">
-                สมัครสมาชิก
+              <a className="button-primary" href="#/signin">
+                เข้าสู่ระบบ
               </a>
-              <a className="button-secondary" href="#/activity">
-                เติมเครดิต
+              <a className="button-secondary" href="#/signup">
+                สมัครสมาชิก
               </a>
             </div>
           </div>

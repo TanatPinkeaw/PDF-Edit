@@ -537,6 +537,12 @@ code {
   cursor: grabbing;
 }
 
+.grab-icon {
+  display: block;
+  flex: none;
+  pointer-events: none;
+}
+
 .page-remove {
   bottom: 6px;
   right: 6px;

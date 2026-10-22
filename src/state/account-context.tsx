@@ -16,7 +16,6 @@ import {
 } from 'react';
 
 import {
-  DEFAULT_CREDITS,
   apiFetch,
   isCredits,
   resetWorkspaceToken,
@@ -33,7 +32,12 @@ type AccountStatus = 'loading' | 'ready' | 'offline';
 type AccountValue = {
   status: AccountStatus;
   snapshot: AccountSnapshot | null;
-  credits: Credits;
+  /** Null while credits are shelved (the default). */
+  credits: Credits | null;
+  /** False while the credit system is shelved; the wallet UI stays hidden. */
+  creditsEnabled: boolean;
+  /** True when a tool may not run without signing in. */
+  requireSignIn: boolean;
   recentEntries: CreditEntry[];
   user: AccountSnapshot['user'];
   authConfigured: boolean;
@@ -268,7 +272,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       snapshot,
-      credits: snapshot?.credits ?? DEFAULT_CREDITS,
+      credits: snapshot?.credits ?? null,
+      creditsEnabled: snapshot?.creditsEnabled ?? false,
+      requireSignIn: snapshot?.requireSignIn ?? true,
       recentEntries: snapshot?.recentEntries ?? [],
       user: snapshot?.user ?? null,
       authConfigured: snapshot?.authConfigured ?? false,

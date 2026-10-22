@@ -17,6 +17,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 
 import { CreditNotice } from '../components/CreditNotice';
+import { GrabIcon } from '../components/GrabIcon';
 import { ToolPage } from '../components/ToolPage';
 import { useFileDrop } from '../hooks/useFileDrop';
 import { useToolRun } from '../hooks/useToolRun';
@@ -86,7 +87,7 @@ function MergeRow({ item, index, total, busy, onPassword, onRemove, onMove }: Ro
         title="ลากเพื่อจัดลำดับ"
         disabled={busy}
       >
-        ⠿
+        <GrabIcon />
       </button>
 
       <span className="merge-order">{index + 1}</span>

@@ -9,17 +9,8 @@ const PASSWORD_MIN = 8;
 export type AuthMode = 'signin' | 'signup';
 
 export function AuthPage({ mode }: { mode: AuthMode }) {
-  const {
-    user,
-    credits,
-    busy,
-    error,
-    authConfigured,
-    signUp,
-    signIn,
-    signInWithGoogle,
-    signOut,
-  } = useAccount();
+  const { user, busy, error, authConfigured, signUp, signIn, signInWithGoogle, signOut } =
+    useAccount();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,18 +43,24 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     if (ok) navigate('/');
   };
 
+  const google = async () => {
+    setLocalError(null);
+    await signInWithGoogle();
+  };
+
   return (
     <main className="auth-page">
       <div className="auth-card panel">
         {user ? (
           <>
             <h1 className="panel-title">เข้าสู่ระบบอยู่แล้ว</h1>
-            <p className="hint">
-              {user.email} · เหลือ {credits.balance} เครดิต
-            </p>
+            <p className="hint">{user.email} · ใช้เครื่องมือได้ฟรีไม่จำกัด</p>
             <div className="auth-actions">
               <a className="button-secondary" href="#/activity">
-                ดูประวัติและเครดิต
+                ดูประวัติการใช้งาน
+              </a>
+              <a className="button-secondary" href="#/password">
+                เปลี่ยนรหัสผ่าน
               </a>
               <button type="button" className="button-ghost" onClick={() => void signOut()} disabled={busy}>
                 ออกจากระบบ
@@ -83,15 +80,34 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
 
             <h1 className="panel-title">{isSignUp ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ'}</h1>
             <p className="hint">
-              {isSignUp
-                ? 'สมัครฟรี รับเครดิตเริ่มต้นทันที และยกเครดิตทดลองที่เหลืออยู่ไปบัญชีใหม่ให้'
-                : 'เข้าสู่ระบบเพื่อเก็บเครดิตและประวัติไว้กับบัญชี ใช้ได้ทุกเบราว์เซอร์'}
+              ใช้เครื่องมือ PDF ทั้งหมดฟรีไม่จำกัด — เข้าสู่ระบบด้วย Google หรืออีเมลก็ได้
+              ไฟล์ยังประมวลผลในแท็บนี้
             </p>
-            {!isSignUp && !user && (
-              <p className="hint">
-                ตอนนี้ใช้โหมดไม่ระบุตัวตน · เหลือ {credits.balance} เครดิต
+
+            {authConfigured ? (
+              <div className="auth-google-primary">
+                <button
+                  type="button"
+                  className="button-primary button-large"
+                  onClick={() => void google()}
+                  disabled={busy}
+                >
+                  {busy ? 'กำลังเข้าสู่ระบบ…' : 'ดำเนินการต่อด้วย Google'}
+                </button>
+                <p className="hint">
+                  ครั้งแรกที่ใช้ Google ระบบจะสร้างบัญชีให้ทันที ไม่ต้องกรอกฟอร์ม
+                </p>
+              </div>
+            ) : (
+              <p className="form-error">
+                ยังไม่ได้ตั้งค่า GOOGLE_CLIENT_ID — เพิ่ม client id ใน .env แล้วรีสตาร์ท API
+                ระหว่างนี้ใช้การเข้าสู่ระบบด้วยอีเมลและรหัสผ่านได้
               </p>
             )}
+
+            <p className="auth-divider">
+              <span>หรือใช้อีเมลและรหัสผ่าน</span>
+            </p>
 
             <form className="auth-form" onSubmit={(event) => void submit(event)}>
               <label className="field">
@@ -143,24 +159,14 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
             </form>
 
             <p className="hint auth-note">
-              {isSignUp
-                ? 'หลังสมัครจะส่งรหัส 6 หลักไปที่อีเมลคุณ ยืนยันแล้วจึงใช้เครดิตได้'
-                : 'ลืมรหัสผ่าน? '}
-              {!isSignUp && <a href="#/forgot">ตั้งรหัสผ่านใหม่ด้วยรหัสทางอีเมล</a>}
+              {isSignUp ? 'สมัครฟรี ไม่มีการหักเครดิตและไม่ต้องยืนยันอีเมลก่อนใช้งาน · ' : ''}
+              {!isSignUp && (
+                <span>
+                  ลืมรหัสผ่าน? <a href="#/forgot">ตั้งรหัสผ่านใหม่ด้วยรหัสทางอีเมล</a> ·{' '}
+                </span>
+              )}
+              บัญชีที่สมัครด้วย Google ไม่มีรหัสผ่าน
             </p>
-
-            {authConfigured && (
-              <div className="auth-google">
-                <button
-                  type="button"
-                  className="button-secondary"
-                  onClick={() => void signInWithGoogle()}
-                  disabled={busy}
-                >
-                  ใช้บัญชี Google แทน
-                </button>
-              </div>
-            )}
           </>
         )}
       </div>

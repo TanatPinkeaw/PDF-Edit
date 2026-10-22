@@ -104,18 +104,24 @@ export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env
       ? { credits: env.signupBonusCredits, reason: 'signup_bonus' as const }
       : { credits: env.anonCredits, reason: 'anon_grant' as const };
 
+  /** Null while credits are shelved, so the browser knows not to show a wallet. */
   const creditsFor = (context: RequestContext) =>
-    getCredits(db, context, {
-      signupBonus: env.signupBonusCredits,
-      anonCredits: env.anonCredits,
-    });
+    env.creditsEnabled
+      ? getCredits(db, context, {
+          signupBonus: env.signupBonusCredits,
+          anonCredits: env.anonCredits,
+        })
+      : Promise.resolve(null);
 
   app.post('/api/runs', async (request, reply) => {
     const context = await resolveContext(db, request);
     const workspaceId = requireWorkspace(context);
-    // A run is the only thing that takes a credit, so this is where an
-    // unverified email has to stop the request.
-    await assertCanSpendCredits(db, mailer, context);
+    // Credits are shelved, so the account itself is the product gate.
+    if (env.requireSignIn && !context.user) {
+      throw new ApiError(401, 'sign_in_required', 'เข้าสู่ระบบก่อนใช้เครื่องมือ — ใช้ฟรีไม่จำกัด');
+    }
+    // Only the wallet-bearing mode needs a proved mailbox.
+    if (env.creditsEnabled) await assertCanSpendCredits(db, mailer, context);
     const body = readObjectBody(request.body);
 
     const tool = readString(body, 'tool', { required: true, maxLength: 60, pattern: /^[a-z0-9-]+$/ });
@@ -139,31 +145,51 @@ export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env
       }
     }
 
+    const runValues = [
+      workspaceId,
+      tool,
+      readString(input, 'name', { maxLength: 255 }),
+      typeof input.pages === 'number' && Number.isFinite(input.pages)
+        ? Math.max(0, Math.round(input.pages))
+        : null,
+      typeof input.bytes === 'number' && Number.isFinite(input.bytes)
+        ? Math.max(0, Math.round(input.bytes))
+        : null,
+      JSON.stringify(params),
+      clientRunId,
+    ];
+
+    reply.code(201);
+
+    if (!env.creditsEnabled) {
+      // Free mode: record the history row only, never touching a wallet.
+      const inserted = await db.query<JobRow>(
+        `insert into job_run
+           (workspace_id, tool, input_name, input_pages, input_bytes, params, client_run_id)
+         values ($1, $2, $3, $4, $5, $6, $7)
+         returning *`,
+        runValues,
+      );
+      const row = inserted.rows[0];
+      if (!row) throw new ApiError(500, 'internal', 'บันทึกงานไม่สำเร็จ');
+      return { run: serializeRun(row), credits: null };
+    }
+
     const wallet = await openWallet(db, context, grantFor(context));
 
     const { run } = await insertChargedRun(db, wallet.id, async (client) => {
       const inserted = await client.query<JobRow>(
         `insert into job_run
-           (workspace_id, credit_wallet_id, tool, input_name, input_pages, input_bytes, params, client_run_id)
+           (workspace_id, tool, input_name, input_pages, input_bytes, params, client_run_id, credit_wallet_id)
          values ($1, $2, $3, $4, $5, $6, $7, $8)
          returning *`,
-        [
-          workspaceId,
-          wallet.id,
-          tool,
-          readString(input, 'name', { maxLength: 255 }),
-          typeof input.pages === 'number' && Number.isFinite(input.pages) ? Math.max(0, Math.round(input.pages)) : null,
-          typeof input.bytes === 'number' && Number.isFinite(input.bytes) ? Math.max(0, Math.round(input.bytes)) : null,
-          JSON.stringify(params),
-          clientRunId,
-        ],
+        [...runValues, wallet.id],
       );
       const row = inserted.rows[0];
       if (!row) throw new ApiError(500, 'internal', 'บันทึกงานไม่สำเร็จ');
       return { run: row, runId: row.id };
     });
 
-    reply.code(201);
     return { run: serializeRun(run), credits: await creditsFor(context) };
   });
 
@@ -222,6 +248,12 @@ export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env
 
   app.get('/api/runs', async (request) => {
     const context = await resolveContext(db, request);
+    // The history window is global: anything older than the retention is gone
+    // for every workspace. credit_entry keeps its row with a null link.
+    await db.query(
+      'delete from job_run where started_at < now() - make_interval(days => $1)',
+      [env.historyTtlDays],
+    );
     await markStaleRunsAbandoned(db, context);
 
     const query = request.query as Record<string, string | undefined>;
@@ -239,6 +271,7 @@ export function registerJobRoutes(app: FastifyInstance, deps: { db: Db; env: Env
 
     return {
       runs: result.rows.map(serializeRun),
+      retentionDays: env.historyTtlDays,
       credits: await creditsFor(context),
     };
   });

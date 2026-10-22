@@ -7,6 +7,7 @@ import {
   closeTestDb,
   createTestApp,
   originHeaders,
+  testEnv,
   truncateAll,
   workspaceToken,
 } from './helpers/test-server.ts';
@@ -35,7 +36,11 @@ async function signUp(email: string): Promise<string> {
 }
 
 beforeAll(async () => {
-  const created = await createTestApp();
+  // The suite that keeps the shelved ledger honest: run the app in the old
+  // economics so the wallet, codes and admin tools stay covered.
+  const created = await createTestApp({
+    env: testEnv({ CREDITS_ENABLED: 'true', REQUIRE_SIGN_IN: 'false' }),
+  });
   app = created.app;
   db = created.db;
 });

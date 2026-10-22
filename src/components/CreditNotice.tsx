@@ -6,9 +6,10 @@ type Props = {
 };
 
 export function CreditNotice({ message, onDismiss }: Props) {
-  const { user } = useAccount();
+  const { user, creditsEnabled } = useAccount();
 
-  if (!message) return null;
+  // Shelved wallet: a run can never be refused for credits.
+  if (!creditsEnabled || !message) return null;
 
   return (
     <div className="quota-notice" role="alert">

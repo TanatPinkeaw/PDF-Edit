@@ -148,7 +148,9 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
 
   registerAccountRoutes(app, { db, env, mailer, googleVerifier });
   registerVerificationRoutes(app, { db, mailer });
-  registerCreditRoutes(app, { db, env, mailer });
+  // The wallet endpoints disappear while credits are shelved, so nothing in the
+  // browser can read or top up a balance that is not spent anyway.
+  if (env.creditsEnabled) registerCreditRoutes(app, { db, env, mailer });
   registerJobRoutes(app, { db, env, mailer });
   registerPresetRoutes(app, { db });
   registerShareRoutes(app, { db, env });

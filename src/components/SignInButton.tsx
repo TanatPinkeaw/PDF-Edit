@@ -18,7 +18,7 @@ export function SignInButton() {
   }
 
   return (
-    <a className="button-secondary sign-in" href="#/signin" title="เข้าสู่ระบบเพื่อเก็บเครดิตไว้กับบัญชี">
+    <a className="button-secondary sign-in" href="#/signin" title="เข้าสู่ระบบเพื่อใช้เครื่องมือ (ฟรีไม่จำกัด)">
       เข้าสู่ระบบ
     </a>
   );

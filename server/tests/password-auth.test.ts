@@ -51,19 +51,21 @@ afterAll(async () => {
 });
 
 describe('signup', () => {
-  it('creates an account with the signup bonus and a session', async () => {
+  it('creates an account and a session without opening a wallet', async () => {
     const response = await signUp('New@Example.com');
 
     expect(response.statusCode).toBe(201);
     const body = response.json();
     expect(body.user).toMatchObject({ email: 'new@example.com', name: 'คุณใหม่' });
-    expect(body.credits).toMatchObject({ balance: 20, allowance: null, member: true });
-    expect(body.recentEntries[0]).toMatchObject({ delta: 20, reason: 'signup_bonus' });
+    expect(body.credits).toBeNull();
+    expect(body.recentEntries).toEqual([]);
+    expect(body.creditsEnabled).toBe(false);
 
     const cookie = sessionCookie(response);
     const me = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie } });
     expect(me.json().user.email).toBe('new@example.com');
-    expect(me.json().credits.balance).toBe(20);
+    expect(me.json().credits).toBeNull();
+    expect((await db.query('select 1 from credit_wallet')).rowCount).toBe(0);
   });
 
   it('stores only a scrypt hash, never the password', async () => {
@@ -91,20 +93,25 @@ describe('signup', () => {
     expect(users.rowCount).toBe(0);
   });
 
-  it('carries the anonymous credits and history into the new account', async () => {
+  it('adopts the browser workspace so history follows the account', async () => {
     const token = workspaceToken();
-    const headers = originHeaders(token);
-    await app.inject({ method: 'POST', url: '/api/runs', headers, payload: { tool: 'rotate' } });
 
     const response = await signUp('carry@example.com', PASSWORD, token);
     expect(response.statusCode).toBe(201);
-    // 20 bonus + the 2 anonymous credits left after one run.
-    expect(response.json().credits.balance).toBe(22);
+    expect(response.json().credits).toBeNull();
 
     const cookie = sessionCookie(response);
+    const started = await app.inject({
+      method: 'POST',
+      url: '/api/runs',
+      headers: { ...originHeaders(token), cookie },
+      payload: { tool: 'rotate' },
+    });
+    expect(started.statusCode).toBe(201);
+
     const history = await app.inject({ method: 'GET', url: '/api/runs', headers: { cookie } });
     expect(history.json().runs).toHaveLength(1);
-    expect(history.json().credits.balance).toBe(22);
+    expect(history.json().credits).toBeNull();
   });
 });
 
@@ -185,17 +192,16 @@ describe('signin', () => {
       headers: { cookie: sessionCookie(signInB) },
     });
     expect(history.json().runs).toHaveLength(0);
-    expect(history.json().credits.balance).toBe(20);
+    expect(history.json().credits).toBeNull();
   });
 });
 
 describe('sign-out', () => {
-  it('does not hand out a fresh anonymous allowance each time', async () => {
+  it('keeps the account intact and never mints a wallet on the way out', async () => {
     const token = workspaceToken();
     const headers = originHeaders(token);
     const signup = await signUp('loop@example.com', PASSWORD, token);
     const cookie = sessionCookie(signup);
-    const balanceAfterSignup = (signup.json().credits.balance as number);
 
     for (let round = 0; round < 2; round += 1) {
       const signedOut = await app.inject({
@@ -205,9 +211,9 @@ describe('sign-out', () => {
       });
       expect(signedOut.statusCode).toBe(200);
 
-      // Signed out on the same browser: the allowance was already spent.
       const anonymous = await app.inject({ method: 'POST', url: '/api/bootstrap', headers });
-      expect(anonymous.json().credits).toMatchObject({ member: false, balance: 0 });
+      expect(anonymous.json().user).toBeNull();
+      expect(anonymous.json().credits).toBeNull();
 
       const signin = await app.inject({
         method: 'POST',
@@ -215,8 +221,11 @@ describe('sign-out', () => {
         headers,
         payload: { email: 'loop@example.com', password: PASSWORD },
       });
-      expect(signin.json().credits.balance).toBe(balanceAfterSignup);
+      expect(signin.statusCode).toBe(200);
+      expect(signin.json().credits).toBeNull();
     }
+
+    expect((await db.query('select 1 from credit_wallet')).rowCount).toBe(0);
   });
 });
 
