@@ -1,6 +1,10 @@
 import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
+import { DropOverlay } from '../components/DropOverlay';
+import { OutputNameField } from '../components/OutputNameField';
 import { ToolPage } from '../components/ToolPage';
+import { useFileDrop } from '../hooks/useFileDrop';
+import { useOutputName } from '../hooks/useOutputName';
 import { downloadBytes, imagesPdfFileName } from '../lib/download';
 import {
   MAX_MARGIN,
@@ -26,6 +30,7 @@ const ACCEPTED: Record<string, ImageMime> = {
 
 export function JpgToPdfPage() {
   const [images, setImages] = useState<PickedImage[]>([]);
+  const outputName = useOutputName(imagesPdfFileName(images[0]?.name ?? 'images'));
   const [pageSize, setPageSize] = useState<ImagePageSize>('a4');
   const [margin, setMargin] = useState(24);
   const [busy, setBusy] = useState(false);
@@ -66,6 +71,17 @@ export function JpgToPdfPage() {
     void addFiles(files);
   };
 
+  const drop = useFileDrop({
+    enabled: !busy,
+    onFiles: (files) => {
+      if (files.length === 0) {
+        setStatus({ tone: 'error', text: 'อ่านไฟล์จากสิ่งที่วางไม่ได้ — ลองลากไฟล์ภาพแทนโฟลเดอร์' });
+        return;
+      }
+      void addFiles(files);
+    },
+  });
+
   const remove = (id: string) => {
     setImages((current) => {
       const target = current.find((image) => image.id === id);
@@ -95,7 +111,7 @@ export function JpgToPdfPage() {
         images.map((image) => ({ bytes: image.bytes, mime: image.mime })),
         { pageSize, margin },
       );
-      const name = imagesPdfFileName(images[0]?.name ?? 'images');
+      const name = outputName.resolved;
       downloadBytes(name, bytes);
       setStatus({ tone: 'info', text: `ดาวน์โหลด ${name} แล้ว — ${images.length} หน้า` });
     } catch (error) {
@@ -128,8 +144,8 @@ export function JpgToPdfPage() {
         />
 
         {total === 0 ? (
-          <div className="dropzone">
-            <h2>ลากภาพ PNG / JPG มาวางตรงนี้</h2>
+          <div className="dropzone" data-dragging={drop.dragging || undefined}>
+            <h2>ลากภาพ PNG / JPG หรือโฟลเดอร์มาวางตรงนี้</h2>
             <p className="dropzone-sub">เลือกได้หลายไฟล์ · แต่ละภาพกลายเป็นหนึ่งหน้า</p>
             <div className="dropzone-actions">
               <button
@@ -203,6 +219,8 @@ export function JpgToPdfPage() {
                 onChange={(event) => setMargin(Number(event.target.value))}
               />
 
+              <OutputNameField name={outputName} disabled={busy} />
+
               <button
                 type="button"
                 className="button-primary button-large"
@@ -229,6 +247,8 @@ export function JpgToPdfPage() {
           </div>
         )}
       </div>
+
+      <DropOverlay drop={drop} label="วางภาพหรือโฟลเดอร์เพื่อเพิ่ม" />
     </ToolPage>
   );
 }

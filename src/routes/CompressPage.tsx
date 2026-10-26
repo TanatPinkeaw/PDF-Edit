@@ -1,14 +1,18 @@
 import { useCallback, useRef, useState, type ChangeEvent } from 'react';
 
+import { DropOverlay } from '../components/DropOverlay';
+import { OutputNameField } from '../components/OutputNameField';
 import { ToolPage } from '../components/ToolPage';
+import { useFileDrop } from '../hooks/useFileDrop';
+import { useOutputName } from '../hooks/useOutputName';
 import { compressedFileName, downloadBytes } from '../lib/download';
+import { dropRejectedMessage, isPdfFile } from '../lib/dropped-files';
 import { COMPRESS_PRESETS, compressPdf, describeSaving, type CompressQuality } from '../lib/pdf/compress';
 import { inspectPdf } from '../lib/pdf-ops';
 
 type Status = { tone: 'info' | 'error'; text: string } | null;
 
 type Result = {
-  name: string;
   bytes: Uint8Array;
   originalBytes: number;
 };
@@ -17,6 +21,7 @@ const QUALITIES: CompressQuality[] = ['screen', 'balanced', 'print'];
 
 export function CompressPage() {
   const [pdf, setPdf] = useState<{ name: string; bytes: Uint8Array; pages: number } | null>(null);
+  const outputName = useOutputName(compressedFileName(pdf?.name ?? 'document.pdf'));
   const [quality, setQuality] = useState<CompressQuality>('balanced');
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -24,10 +29,7 @@ export function CompressPage() {
   const [status, setStatus] = useState<Status>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
+  const openFile = useCallback(async (file: File) => {
     setBusy(true);
     setStatus(null);
     setResult(null);
@@ -44,6 +46,24 @@ export function CompressPage() {
     }
   }, []);
 
+  const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) void openFile(file);
+  };
+
+  const drop = useFileDrop({
+    enabled: !busy,
+    onFiles: (files) => {
+      const pdfFile = files.find(isPdfFile);
+      if (!pdfFile) {
+        setStatus({ tone: 'error', text: dropRejectedMessage(files, 'PDF') });
+        return;
+      }
+      void openFile(pdfFile);
+    },
+  });
+
   const run = async () => {
     if (!pdf) return;
     setBusy(true);
@@ -52,8 +72,7 @@ export function CompressPage() {
     setProgress({ done: 0, total: pdf.pages });
     try {
       const compressed = await compressPdf(pdf.bytes, quality, (done, total) => setProgress({ done, total }));
-      const name = compressedFileName(pdf.name);
-      setResult({ name, bytes: compressed.bytes, originalBytes: compressed.originalBytes });
+      setResult({ bytes: compressed.bytes, originalBytes: compressed.originalBytes });
       const saving = describeSaving(compressed.originalBytes, compressed.bytes.byteLength);
       setStatus({
         tone: 'info',
@@ -72,8 +91,9 @@ export function CompressPage() {
 
   const save = () => {
     if (!result) return;
-    downloadBytes(result.name, result.bytes);
-    setStatus({ tone: 'info', text: `ดาวน์โหลด ${result.name} แล้ว` });
+    const name = outputName.resolved;
+    downloadBytes(name, result.bytes);
+    setStatus({ tone: 'info', text: `ดาวน์โหลด ${name} แล้ว` });
   };
 
   return (
@@ -93,8 +113,8 @@ export function CompressPage() {
         />
 
         {!pdf ? (
-          <div className="dropzone">
-            <h2>ลากไฟล์ PDF มาวางตรงนี้</h2>
+          <div className="dropzone" data-dragging={drop.dragging || undefined}>
+            <h2>ลากไฟล์ PDF หรือโฟลเดอร์มาวางตรงนี้</h2>
             <p className="dropzone-sub">เลือกคุณภาพแล้วบีบอัด — ไฟล์ไม่ออกจากเครื่อง</p>
             <div className="dropzone-actions">
               <button type="button" className="button-primary button-large" onClick={() => inputRef.current?.click()} disabled={busy}>
@@ -162,9 +182,7 @@ export function CompressPage() {
                     {(result.originalBytes / 1024 / 1024).toFixed(2)} MB →{' '}
                     {(result.bytes.byteLength / 1024 / 1024).toFixed(2)} MB
                   </p>
-                  <p className="export-meta">
-                    <code>{result.name}</code>
-                  </p>
+                  <OutputNameField name={outputName} disabled={busy} />
                   <button type="button" className="button-primary button-large" onClick={save}>
                     ดาวน์โหลดไฟล์ที่บีบอัด
                   </button>
@@ -182,6 +200,8 @@ export function CompressPage() {
           </div>
         )}
       </div>
+
+      <DropOverlay drop={drop} />
     </ToolPage>
   );
 }

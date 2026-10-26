@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { PresetPicker } from '../components/PresetPicker';
 import { CreditNotice } from '../components/CreditNotice';
+import { OutputNameField } from '../components/OutputNameField';
 import { StampPreview } from '../components/StampPreview';
 import { ToolPage } from '../components/ToolPage';
 import { Workbench } from '../components/Workbench';
 import { useCurrentDocument } from '../hooks/useCurrentDocument';
+import { useOutputName } from '../hooks/useOutputName';
 import { useToolRun } from '../hooks/useToolRun';
 import { numberedFileName } from '../lib/download';
 import { PdfError } from '../lib/pdf-ops';
@@ -47,6 +49,7 @@ export function PageNumbersPage() {
   const [scope, setScope] = useState<Scope>('all');
 
   const doc = session.doc;
+  const outputName = useOutputName(numberedFileName(doc?.fileName ?? 'document.pdf'));
   const selected = selectedPageNumbers(session.state);
   const total = doc?.entries.length ?? 0;
   const problem = templateError(template);
@@ -149,7 +152,7 @@ export function PageNumbersPage() {
       async () => {
         if (!current) throw new PdfError('invalid', 'เอกสารยังไม่พร้อม');
         const bytes = await addPageNumbers(current, options);
-        return { name: numberedFileName(doc.fileName), bytes };
+        return { name: outputName.resolved, bytes };
       },
       { name: doc.fileName, pages: total, bytes: session.bytes?.byteLength ?? 0 },
     );
@@ -374,6 +377,8 @@ export function PageNumbersPage() {
                 </div>
               </div>
 
+              <OutputNameField name={outputName} disabled={session.busy} />
+
               <button
                 type="button"
                 className="button-primary button-large"
@@ -382,10 +387,6 @@ export function PageNumbersPage() {
               >
                 {session.busy ? 'กำลังใส่เลขหน้า…' : 'ใส่เลขหน้าและดาวน์โหลด'}
               </button>
-
-              <p className="hint">
-                ไฟล์ผลลัพธ์ชื่อ <code>{doc ? numberedFileName(doc.fileName) : 'document-numbered.pdf'}</code>
-              </p>
             </section>
 
             <CreditNotice message={creditMessage} onDismiss={clearCreditMessage} />

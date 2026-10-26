@@ -1,13 +1,26 @@
 import { useEffect, useState } from 'react';
 
+import { filesFromDataTransfer } from '../lib/dropped-files';
+
 type Options = {
   enabled?: boolean;
   onFiles: (files: File[]) => void;
 };
 
-/** Tracks a window-wide file drag and hands dropped files to the caller. */
-export function useFileDrop({ enabled = true, onFiles }: Options): boolean {
+export type FileDropState = {
+  /** A file drag is hovering the window. */
+  dragging: boolean;
+  /** A folder is being walked; keep the overlay up meanwhile. */
+  reading: boolean;
+};
+
+/**
+ * Tracks a window-wide file drag and hands dropped files to the caller.
+ * Folders are read recursively, so a whole scan folder can be dropped at once.
+ */
+export function useFileDrop({ enabled = true, onFiles }: Options): FileDropState {
   const [dragging, setDragging] = useState(false);
+  const [reading, setReading] = useState(false);
 
   useEffect(() => {
     if (!enabled) {
@@ -42,8 +55,16 @@ export function useFileDrop({ enabled = true, onFiles }: Options): boolean {
       setDragging(false);
       if (!carriesFiles(event)) return;
       event.preventDefault();
-      const files = Array.from(event.dataTransfer?.files ?? []);
-      if (files.length > 0) onFiles(files);
+      const transfer = event.dataTransfer;
+      if (!transfer) return;
+
+      setReading(true);
+      // Files are read asynchronously; the DataTransfer itself is gone once
+      // this handler returns, so entries were captured inside the call below.
+      void filesFromDataTransfer(transfer)
+        .catch(() => [])
+        .then((files) => onFiles(files))
+        .finally(() => setReading(false));
     };
 
     window.addEventListener('dragenter', handleEnter);
@@ -58,5 +79,5 @@ export function useFileDrop({ enabled = true, onFiles }: Options): boolean {
     };
   }, [enabled, onFiles]);
 
-  return dragging;
+  return { dragging, reading };
 }

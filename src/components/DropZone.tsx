@@ -23,7 +23,7 @@ export function DropZone({ busy, onPick, onSample, hint, title }: Props) {
         <path d="M20 44h24M20 54h24M20 64h14" stroke="currentColor" strokeWidth="2.5" />
       </svg>
 
-      <h2>{title ?? 'ลากไฟล์ PDF มาวางตรงนี้'}</h2>
+      <h2>{title ?? 'ลากไฟล์ PDF หรือโฟลเดอร์มาวางตรงนี้'}</h2>
       <p className="dropzone-sub">
         {hint ?? 'ลบหน้า · จัดลำดับใหม่ · แยกหน้า — ไฟล์ไม่ถูกอัปโหลดขึ้นเซิร์ฟเวอร์'}
       </p>

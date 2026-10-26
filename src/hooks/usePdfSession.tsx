@@ -12,6 +12,7 @@ import {
   imagesZipFileName,
   mimeForName,
   rangeFileName,
+  sanitizeFileName,
   selectionFileName,
   splitZipFileName,
   zipFiles,
@@ -70,6 +71,12 @@ function describeError(error: unknown): string {
   return 'เกิดข้อผิดพลาดที่ไม่รู้จัก';
 }
 
+/** A user-supplied output name, always ending in .pdf. */
+function asPdfName(name: string): string {
+  const cleaned = sanitizeFileName(name);
+  return /\.pdf$/i.test(cleaned) ? cleaned : `${cleaned}.pdf`;
+}
+
 export type PdfSession = {
   bytes: Uint8Array | null;
   state: SessionState;
@@ -96,13 +103,15 @@ export type PdfSession = {
   undo: () => void;
   redo: () => void;
   rememberOutput: (output: LastOutput) => void;
-  downloadEdited: () => Promise<LastOutput | null>;
-  downloadSelection: () => Promise<LastOutput | null>;
-  splitRanges: (ranges: PageRange[]) => Promise<LastOutput | null>;
+  /** Optional name is the full file name chosen by the user. */
+  downloadEdited: (name?: string) => Promise<LastOutput | null>;
+  downloadSelection: (name?: string) => Promise<LastOutput | null>;
+  splitRanges: (ranges: PageRange[], name?: string) => Promise<LastOutput | null>;
   exportImages: (
     format: ImageFormat,
     scale: ImageScale,
     scope: ImageScope,
+    name?: string,
   ) => Promise<LastOutput | null>;
 };
 
@@ -257,14 +266,14 @@ export function usePdfSession(): PdfSession {
     [],
   );
 
-  const downloadEdited = useCallback(async (): Promise<LastOutput | null> => {
+  const downloadEdited = useCallback(async (customName?: string): Promise<LastOutput | null> => {
     if (!bytes || !doc || busy) return null;
     return withBusy(async () => {
       setStatus(null);
       try {
         const indices = doc.entries.map((entry) => entry.srcIndex);
         const output = await buildPdf(bytes, indices);
-        const name = editedFileName(doc.fileName);
+        const name = customName ? asPdfName(customName) : editedFileName(doc.fileName);
         const result = deliver(name, output);
         setStatus({ tone: 'info', text: `ดาวน์โหลด ${name} แล้ว — ${indices.length} หน้า` });
         return result;
@@ -275,7 +284,7 @@ export function usePdfSession(): PdfSession {
     });
   }, [busy, bytes, deliver, doc, withBusy]);
 
-  const downloadSelection = useCallback(async (): Promise<LastOutput | null> => {
+  const downloadSelection = useCallback(async (customName?: string): Promise<LastOutput | null> => {
     if (!bytes || !doc || busy) return null;
     const entries = selectedEntries(state);
     if (entries.length === 0) {
@@ -289,7 +298,8 @@ export function usePdfSession(): PdfSession {
           bytes,
           entries.map((entry) => entry.srcIndex),
         );
-        const name = selectionFileName(doc.fileName);
+        const sourceName = customName ? asPdfName(customName) : doc.fileName;
+        const name = selectionFileName(sourceName);
         const result = deliver(name, output);
         setStatus({ tone: 'info', text: `ดาวน์โหลด ${name} แล้ว — ${entries.length} หน้า` });
         return result;
@@ -301,8 +311,9 @@ export function usePdfSession(): PdfSession {
   }, [busy, bytes, deliver, doc, state, withBusy]);
 
   const splitRanges = useCallback(
-    async (ranges: PageRange[]): Promise<LastOutput | null> => {
+    async (ranges: PageRange[], customName?: string): Promise<LastOutput | null> => {
       if (!bytes || !doc || busy || ranges.length === 0) return null;
+      const sourceName = customName ? asPdfName(customName) : doc.fileName;
       return withBusy(async () => {
         setStatus(null);
         try {
@@ -316,7 +327,7 @@ export function usePdfSession(): PdfSession {
           const files = built.map((part, index) => {
             const range = ranges[index];
             return {
-              name: rangeFileName(doc.fileName, range?.start ?? 1, range?.end ?? 1),
+              name: rangeFileName(sourceName, range?.start ?? 1, range?.end ?? 1),
               bytes: part.bytes,
             };
           });
@@ -327,7 +338,7 @@ export function usePdfSession(): PdfSession {
             return result;
           }
 
-          const zipName = splitZipFileName(doc.fileName);
+          const zipName = splitZipFileName(sourceName);
           const result = deliver(zipName, zipFiles(files), 'application/zip');
           setStatus({
             tone: 'info',
@@ -348,8 +359,10 @@ export function usePdfSession(): PdfSession {
       format: ImageFormat,
       scale: ImageScale,
       scope: ImageScope,
+      customName?: string,
     ): Promise<LastOutput | null> => {
       if (!bytes || !doc || busy) return null;
+      const sourceName = customName ? asPdfName(customName) : doc.fileName;
 
       const selected = new Set(state.selection);
       const targets = doc.entries
@@ -383,7 +396,7 @@ export function usePdfSession(): PdfSession {
           const files = rendered.map((image, index) => {
             const position = targets[index]?.position ?? index + 1;
             return {
-              name: imageFileName(doc.fileName, position, extension),
+              name: imageFileName(sourceName, position, extension),
               bytes: image.bytes,
             };
           });
@@ -394,7 +407,7 @@ export function usePdfSession(): PdfSession {
             return result;
           }
 
-          const zipName = imagesZipFileName(doc.fileName);
+          const zipName = imagesZipFileName(sourceName);
           const result = deliver(zipName, zipFiles(files), 'application/zip');
           setStatus({
             tone: 'info',

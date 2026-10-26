@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
+import { DropOverlay } from '../components/DropOverlay';
+import { OutputNameField } from '../components/OutputNameField';
 import { SignatureStage, type StageSignature } from '../components/SignatureStage';
 import { ToolPage } from '../components/ToolPage';
+import { useFileDrop } from '../hooks/useFileDrop';
+import { useOutputName } from '../hooks/useOutputName';
 import { downloadBytes, signedFileName } from '../lib/download';
+import { dropRejectedMessage, isPdfFile } from '../lib/dropped-files';
 import { inspectPdf } from '../lib/pdf-ops';
 import { stampSignatures } from '../lib/pdf/sign';
 
@@ -96,6 +101,7 @@ function makePlacement(
 
 export function SignPage() {
   const [pdf, setPdf] = useState<PdfState | null>(null);
+  const outputName = useOutputName(signedFileName(pdf?.name ?? 'document.pdf'));
   const [signatures, setSignatures] = useState<SignatureImage[]>([]);
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [selectedSignatureId, setSelectedSignatureId] = useState<string | null>(null);
@@ -121,11 +127,7 @@ export function SignPage() {
     [],
   );
 
-  const handlePdf = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
+  const openPdf = useCallback(async (file: File) => {
     setBusy(true);
     setStatus(null);
     try {
@@ -147,6 +149,24 @@ export function SignPage() {
       setBusy(false);
     }
   }, []);
+
+  const handlePdf = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) void openPdf(file);
+  };
+
+  const drop = useFileDrop({
+    enabled: !busy,
+    onFiles: (files) => {
+      const pdfFile = files.find(isPdfFile);
+      if (!pdfFile) {
+        setStatus({ tone: 'error', text: dropRejectedMessage(files, 'PDF') });
+        return;
+      }
+      void openPdf(pdfFile);
+    },
+  });
 
   const addSignatures = useCallback(
     async (files: readonly File[], at?: { x: number; y: number } | null) => {
@@ -304,7 +324,7 @@ export function SignPage() {
       if (stamps.length === 0) throw new Error('ยังไม่มีลายเซ็นที่จะวาง');
 
       const bytes = await stampSignatures(pdf.bytes, stamps);
-      const name = signedFileName(pdf.name);
+      const name = outputName.resolved;
       downloadBytes(name, bytes);
       setStatus({
         tone: 'info',
@@ -558,6 +578,8 @@ export function SignPage() {
                 )}
               </section>
 
+              <OutputNameField name={outputName} disabled={busy} />
+
               <button
                 type="button"
                 className="button-primary button-large"
@@ -580,6 +602,8 @@ export function SignPage() {
           </div>
         )}
       </div>
+
+      <DropOverlay drop={drop} label="วางไฟล์ PDF หรือโฟลเดอร์เพื่อเปิด" />
     </ToolPage>
   );
 }

@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useEffect, useRef, type ChangeEvent, type ReactNode } from 'react';
 
 import { useFileDrop } from '../hooks/useFileDrop';
+import { isPdfFile } from '../lib/dropped-files';
 import { canRedo, canUndo } from '../lib/history';
 import { isDocModified, selectedPageNumbers, type ToggleMode } from '../lib/session';
 import { useWorkspace } from '../state/workspace-context';
+import { DropOverlay } from './DropOverlay';
 import { DropZone } from './DropZone';
 import { PageGrid } from './PageGrid';
 import { Toolbar } from './Toolbar';
@@ -31,19 +33,26 @@ export function Workbench({
   const { session, thumbnails } = useWorkspace();
   const { doc, state, busy, dispatch } = session;
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [dragActive, setDragActive] = useState(false);
 
   const selectedNumbers = selectedPageNumbers(state);
 
   const handleDrop = (files: File[]) => {
-    const file = files[0];
-    if (file) void session.openFile(file);
+    const pdfs = files.filter(isPdfFile);
+    if (pdfs.length === 0) {
+      session.notify('error', 'ไม่พบไฟล์ PDF ในสิ่งที่วาง — ลากไฟล์ .pdf หรือโฟลเดอร์ที่มี PDF');
+      return;
+    }
+    if (pdfs.length > 1) {
+      session.notify(
+        'info',
+        `พบ ${pdfs.length} ไฟล์ — เปิด ${pdfs[0]?.name ?? 'ไฟล์แรก'} (ใช้ Merge PDF เพื่อรวมหลายไฟล์)`,
+      );
+    }
+    const first = pdfs[0];
+    if (first) void session.openFile(first);
   };
 
-  const dragging = useFileDrop({ onFiles: handleDrop });
-  useEffect(() => {
-    setDragActive(dragging);
-  }, [dragging]);
+  const drop = useFileDrop({ onFiles: handleDrop, enabled: !busy });
 
   useEffect(() => {
     const isTyping = (target: EventTarget | null) => {
@@ -180,11 +189,7 @@ export function Workbench({
         </main>
       )}
 
-      {dragActive && (
-        <div className="drop-overlay" aria-hidden="true">
-          <div>วางไฟล์ PDF เพื่อเปิด</div>
-        </div>
-      )}
+      <DropOverlay drop={drop} label="วางไฟล์ PDF หรือโฟลเดอร์เพื่อเปิด" />
     </>
   );
 }

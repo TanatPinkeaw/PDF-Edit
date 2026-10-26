@@ -1,9 +1,11 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 
 import { CreditNotice } from '../components/CreditNotice';
+import { OutputNameField } from '../components/OutputNameField';
 import { ToolPage } from '../components/ToolPage';
 import { Workbench } from '../components/Workbench';
 import { useCurrentDocument } from '../hooks/useCurrentDocument';
+import { useOutputName } from '../hooks/useOutputName';
 import { useToolRun } from '../hooks/useToolRun';
 import { protectedFileName, unlockedFileName } from '../lib/download';
 import { probePdf } from '../lib/pdf-ops';
@@ -74,6 +76,8 @@ export function LockPage() {
   const [unlockError, setUnlockError] = useState<string | null>(null);
 
   const doc = session.doc;
+  const protectName = useOutputName(protectedFileName(doc?.fileName ?? 'document.pdf'));
+  const unlockName = useOutputName(unlockedFileName(unlockFile?.name ?? 'document.pdf'));
   const passwordProblem =
     password !== '' && password.length < MIN_PASSWORD_LENGTH
       ? `รหัสผ่านต้องยาวอย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร`
@@ -108,7 +112,7 @@ export function LockPage() {
           ownerPassword: ownerPassword.trim() === '' ? undefined : ownerPassword,
           permissions: protectedPermissions(),
         });
-        return { name: protectedFileName(doc.fileName), bytes };
+        return { name: protectName.resolved, bytes };
       },
       { name: doc.fileName, pages: doc.entries.length, bytes: session.bytes?.byteLength ?? 0 },
     );
@@ -145,7 +149,7 @@ export function LockPage() {
       { file: unlockFile.name, pages: unlockFile.pageCount },
       async () => {
         const bytes = await unlockPdf(unlockFile.bytes, unlockPassword);
-        return { name: unlockedFileName(unlockFile.name), bytes };
+        return { name: unlockName.resolved, bytes };
       },
       { name: unlockFile.name, pages: unlockFile.pageCount, bytes: unlockFile.bytes.byteLength },
     );
@@ -261,6 +265,8 @@ export function LockPage() {
                   ))}
                 </ul>
 
+                <OutputNameField name={protectName} disabled={session.busy} />
+
                 <button
                   type="button"
                   className="button-primary button-large"
@@ -272,8 +278,6 @@ export function LockPage() {
 
                 <p className="hint">
                   สิทธิ์เป็นคำขอต่อโปรแกรมอ่าน ไม่ใช่การบังคับทางเทคนิค — รหัสผ่านคือส่วนที่ป้องกันจริง
-                  ไฟล์ผลลัพธ์ชื่อ{' '}
-                  <code>{doc ? protectedFileName(doc.fileName) : 'document-protected.pdf'}</code>
                 </p>
               </section>
 
@@ -339,6 +343,8 @@ export function LockPage() {
                 }
               }}
             />
+
+            <OutputNameField name={unlockName} disabled={session.busy} />
 
             <button
               type="button"

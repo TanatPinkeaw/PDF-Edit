@@ -4,7 +4,9 @@ import { CreditNotice } from '../components/CreditNotice';
 import { SplitPanel } from '../components/SplitPanel';
 import { ToolPage } from '../components/ToolPage';
 import { Workbench } from '../components/Workbench';
+import { useOutputName } from '../hooks/useOutputName';
 import { ToolCanceled, useToolRun } from '../hooks/useToolRun';
+import { editedFileName } from '../lib/download';
 import { selectedPageNumbers } from '../lib/session';
 import type { PageRange } from '../lib/page-ranges';
 import { useWorkspace } from '../state/workspace-context';
@@ -14,6 +16,7 @@ export function OrganizePage() {
   const { track, creditMessage, clearCreditMessage } = useToolRun();
   const { doc, state, busy, imageProgress } = session;
   const selectedCount = selectedPageNumbers(state).length;
+  const outputName = useOutputName(editedFileName(doc?.fileName ?? 'document.pdf'));
 
   const input = doc
     ? { name: doc.fileName, pages: doc.entries.length, bytes: session.bytes?.byteLength ?? 0 }
@@ -24,7 +27,7 @@ export function OrganizePage() {
       'organize',
       { action: 'download', pages: doc?.entries.length ?? 0 },
       async () => {
-        const output = await session.downloadEdited();
+        const output = await session.downloadEdited(outputName.resolved);
         if (!output) throw new ToolCanceled();
         return output;
       },
@@ -37,7 +40,7 @@ export function OrganizePage() {
       'organize',
       { action: 'extract-selection', selected: selectedCount },
       async () => {
-        const output = await session.downloadSelection();
+        const output = await session.downloadSelection(outputName.resolved);
         if (!output) throw new ToolCanceled();
         return output;
       },
@@ -50,7 +53,7 @@ export function OrganizePage() {
       'organize',
       { action: 'split', ranges },
       async () => {
-        const output = await session.splitRanges(ranges);
+        const output = await session.splitRanges(ranges, outputName.resolved);
         if (!output) throw new ToolCanceled();
         return output;
       },
@@ -67,7 +70,7 @@ export function OrganizePage() {
       'organize',
       { action: 'export-images', format, scale, scope },
       async () => {
-        const output = await session.exportImages(format, scale, scope);
+        const output = await session.exportImages(format, scale, scope, outputName.resolved);
         if (!output) throw new ToolCanceled();
         return output;
       },
@@ -84,9 +87,9 @@ export function OrganizePage() {
         aside={
           <>
             <ExportPanel
-              fileName={doc?.fileName ?? ''}
               total={doc?.entries.length ?? 0}
               busy={busy}
+              outputName={outputName}
               onDownload={handleDownload}
             />
 

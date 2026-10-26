@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { PresetPicker } from '../components/PresetPicker';
 import { CreditNotice } from '../components/CreditNotice';
+import { OutputNameField } from '../components/OutputNameField';
 import { ToolPage } from '../components/ToolPage';
 import { Workbench } from '../components/Workbench';
 import { useCurrentDocument } from '../hooks/useCurrentDocument';
+import { useOutputName } from '../hooks/useOutputName';
 import { useToolRun } from '../hooks/useToolRun';
 import { rotatedFileName } from '../lib/download';
 import { PdfError } from '../lib/pdf-ops';
@@ -29,6 +31,7 @@ export function RotatePage() {
   const [scope, setScope] = useState<Scope>('all');
 
   const doc = session.doc;
+  const outputName = useOutputName(rotatedFileName(doc?.fileName ?? 'document.pdf'));
   const selectedIds = useMemo(() => new Set(session.state.selection), [session.state.selection]);
   const selected = selectedPageNumbers(session.state);
 
@@ -57,7 +60,7 @@ export function RotatePage() {
       async () => {
         if (!isRotationAngle(angle)) throw new PdfError('invalid', 'มุมหมุนไม่ถูกต้อง');
         const bytes = await rotateDocument(current, { angle, pages: pagesToRotate });
-        return { name: rotatedFileName(doc.fileName), bytes };
+        return { name: outputName.resolved, bytes };
       },
       { name: doc.fileName, pages: doc.entries.length, bytes: session.bytes?.byteLength ?? 0 },
     );
@@ -136,6 +139,8 @@ export function RotatePage() {
                 </div>
               </div>
 
+              <OutputNameField name={outputName} disabled={session.busy} />
+
               <button
                 type="button"
                 className="button-primary button-large"
@@ -148,10 +153,6 @@ export function RotatePage() {
                     ? `หมุนทั้ง ${doc?.entries.length ?? 0} หน้า แล้วดาวน์โหลด`
                     : `หมุน ${selected.length} หน้า แล้วดาวน์โหลด`}
               </button>
-
-              <p className="hint">
-                ไฟล์ผลลัพธ์ชื่อ <code>{doc ? rotatedFileName(doc.fileName) : 'document-rotated.pdf'}</code>
-              </p>
             </section>
 
             <CreditNotice message={creditMessage} onDismiss={clearCreditMessage} />

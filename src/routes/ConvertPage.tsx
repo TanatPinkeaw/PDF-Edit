@@ -1,7 +1,12 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 
+import { DropOverlay } from '../components/DropOverlay';
+import { OutputNameField } from '../components/OutputNameField';
 import { ToolPage } from '../components/ToolPage';
+import { useFileDrop } from '../hooks/useFileDrop';
+import { useOutputName } from '../hooks/useOutputName';
 import { downloadBytes } from '../lib/download';
+import { dropRejectedMessage } from '../lib/dropped-files';
 
 export type ConvertKind = 'word-to-pdf' | 'pdf-to-word';
 
@@ -29,6 +34,17 @@ const CONFIG: Record<
   },
 };
 
+/** True when the file matches one of the accept tokens (`ext` or MIME type). */
+function matchesAccept(file: File, accept: string): boolean {
+  return accept.split(',').some((token) => {
+    const value = token.trim().toLowerCase();
+    if (value === '') return false;
+    return value.startsWith('.')
+      ? file.name.toLowerCase().endsWith(value)
+      : file.type.toLowerCase() === value;
+  });
+}
+
 function fileNameFromDisposition(header: string | null, fallback: string): string {
   if (!header) return fallback;
   const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header)?.[1];
@@ -40,6 +56,11 @@ function fileNameFromDisposition(header: string | null, fallback: string): strin
 export function ConvertPage({ kind }: { kind: ConvertKind }) {
   const config = CONFIG[kind];
   const [file, setFile] = useState<File | null>(null);
+  const extension = kind === 'word-to-pdf' ? 'pdf' : 'docx';
+  const suggestedName = file
+    ? file.name.replace(/\.(docx?|odt|rtf|pdf)$/i, `.${extension}`)
+    : `document.${extension}`;
+  const outputName = useOutputName(suggestedName, extension);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +72,19 @@ export function ConvertPage({ kind }: { kind: ConvertKind }) {
     setFile(picked);
     setStatus(null);
   };
+
+  const drop = useFileDrop({
+    enabled: !busy,
+    onFiles: (files) => {
+      const picked = files.find((item) => matchesAccept(item, config.accept));
+      if (!picked) {
+        setStatus({ tone: 'error', text: dropRejectedMessage(files, config.accept) });
+        return;
+      }
+      setFile(picked);
+      setStatus(null);
+    },
+  });
 
   const convert = async () => {
     if (!file) return;
@@ -82,10 +116,16 @@ export function ConvertPage({ kind }: { kind: ConvertKind }) {
       }
 
       const bytes = new Uint8Array(await response.arrayBuffer());
-      const name = fileNameFromDisposition(
-        response.headers.get('content-disposition'),
-        file.name.replace(/\.(docx?|odt|rtf|pdf)$/i, kind === 'word-to-pdf' ? '.pdf' : '.docx'),
+      const fallback = file.name.replace(
+        /\.(docx?|odt|rtf|pdf)$/i,
+        kind === 'word-to-pdf' ? '.pdf' : '.docx',
       );
+      const serverName = fileNameFromDisposition(
+        response.headers.get('content-disposition'),
+        fallback,
+      );
+      // Keep the server's name unless the user typed their own.
+      const name = outputName.dirty ? outputName.resolved : serverName;
       downloadBytes(name, bytes);
       setStatus({ tone: 'info', text: `ดาวน์โหลด ${name} แล้ว` });
     } catch (error) {
@@ -118,6 +158,7 @@ export function ConvertPage({ kind }: { kind: ConvertKind }) {
               <span className="panel-note">{config.prefix}</span>
             </header>
             <p className="export-meta">{file ? file.name : 'ยังไม่ได้เลือกไฟล์'}</p>
+            {file && <OutputNameField name={outputName} disabled={busy} />}
             <button type="button" className="button-secondary" onClick={() => inputRef.current?.click()}>
               {file ? 'เปลี่ยนไฟล์' : config.pickLabel}
             </button>
@@ -153,6 +194,8 @@ export function ConvertPage({ kind }: { kind: ConvertKind }) {
           </div>
         )}
       </div>
+
+      <DropOverlay drop={drop} label="วางไฟล์หรือโฟลเดอร์เพื่อแปลง" />
     </ToolPage>
   );
 }

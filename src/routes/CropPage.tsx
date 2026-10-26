@@ -1,8 +1,13 @@
 import { useCallback, useRef, useState, type ChangeEvent } from 'react';
 import { PDFDocument } from '@cantoo/pdf-lib';
 
+import { DropOverlay } from '../components/DropOverlay';
+import { OutputNameField } from '../components/OutputNameField';
 import { ToolPage } from '../components/ToolPage';
+import { useFileDrop } from '../hooks/useFileDrop';
+import { useOutputName } from '../hooks/useOutputName';
 import { croppedFileName, downloadBytes } from '../lib/download';
+import { dropRejectedMessage, isPdfFile } from '../lib/dropped-files';
 import { cropPdf } from '../lib/pdf/crop';
 import { inspectPdf } from '../lib/pdf-ops';
 
@@ -22,14 +27,12 @@ const FIELDS: { key: keyof Percent; label: string }[] = [
 export function CropPage() {
   const [pdf, setPdf] = useState<{ name: string; bytes: Uint8Array; pages: number; width: number; height: number } | null>(null);
   const [percent, setPercent] = useState<Percent>(INITIAL);
+  const outputName = useOutputName(croppedFileName(pdf?.name ?? 'document.pdf'));
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
+  const openFile = useCallback(async (file: File) => {
     setBusy(true);
     setStatus(null);
     try {
@@ -53,6 +56,24 @@ export function CropPage() {
     }
   }, []);
 
+  const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) void openFile(file);
+  };
+
+  const drop = useFileDrop({
+    enabled: !busy,
+    onFiles: (files) => {
+      const pdfFile = files.find(isPdfFile);
+      if (!pdfFile) {
+        setStatus({ tone: 'error', text: dropRejectedMessage(files, 'PDF') });
+        return;
+      }
+      void openFile(pdfFile);
+    },
+  });
+
   const apply = async () => {
     if (!pdf) return;
     setBusy(true);
@@ -66,7 +87,7 @@ export function CropPage() {
       };
       const targets = Array.from({ length: pdf.pages }, (_, pageIndex) => ({ pageIndex, insets }));
       const bytes = await cropPdf(pdf.bytes, targets);
-      const name = croppedFileName(pdf.name);
+      const name = outputName.resolved;
       downloadBytes(name, bytes);
       setStatus({ tone: 'info', text: `ดาวน์โหลด ${name} แล้ว — ${pdf.pages} หน้า` });
     } catch (error) {
@@ -100,8 +121,8 @@ export function CropPage() {
         />
 
         {!pdf ? (
-          <div className="dropzone">
-            <h2>ลากไฟล์ PDF มาวางตรงนี้</h2>
+          <div className="dropzone" data-dragging={drop.dragging || undefined}>
+            <h2>ลากไฟล์ PDF หรือโฟลเดอร์มาวางตรงนี้</h2>
             <p className="dropzone-sub">ตั้งขอบทั้ง 4 ด้าน แล้วบันทึกเป็นไฟล์ใหม่</p>
             <div className="dropzone-actions">
               <button type="button" className="button-primary button-large" onClick={() => inputRef.current?.click()} disabled={busy}>
@@ -151,6 +172,8 @@ export function CropPage() {
                 รีเซ็ตค่า
               </button>
 
+              <OutputNameField name={outputName} disabled={busy} />
+
               <button
                 type="button"
                 className="button-primary button-large"
@@ -173,6 +196,8 @@ export function CropPage() {
           </div>
         )}
       </div>
+
+      <DropOverlay drop={drop} />
     </ToolPage>
   );
 }

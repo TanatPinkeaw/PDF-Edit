@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import { PresetPicker } from '../components/PresetPicker';
 import { CreditNotice } from '../components/CreditNotice';
+import { OutputNameField } from '../components/OutputNameField';
 import { StampPreview } from '../components/StampPreview';
 import { ToolPage } from '../components/ToolPage';
 import { Workbench } from '../components/Workbench';
 import { useCurrentDocument } from '../hooks/useCurrentDocument';
+import { useOutputName } from '../hooks/useOutputName';
 import { useToolRun } from '../hooks/useToolRun';
 import { watermarkedFileName } from '../lib/download';
 import { PdfError } from '../lib/pdf-ops';
@@ -57,6 +59,7 @@ export function WatermarkPage() {
   const [scope, setScope] = useState<Scope>('all');
 
   const doc = session.doc;
+  const outputName = useOutputName(watermarkedFileName(doc?.fileName ?? 'document.pdf'));
   const selected = selectedPageNumbers(session.state);
   const previewIndex = scope === 'selected' ? Math.max(0, (selected[0] ?? 1) - 1) : 0;
 
@@ -168,7 +171,7 @@ export function WatermarkPage() {
       async () => {
         if (!current) throw new PdfError('invalid', 'เอกสารยังไม่พร้อม');
         const bytes = await watermarkPdf(current, options);
-        return { name: watermarkedFileName(doc.fileName), bytes };
+        return { name: outputName.resolved, bytes };
       },
       { name: doc.fileName, pages: doc.entries.length, bytes: session.bytes?.byteLength ?? 0 },
     );
@@ -435,6 +438,8 @@ export function WatermarkPage() {
                 </div>
               </div>
 
+              <OutputNameField name={outputName} disabled={session.busy} />
+
               <button
                 type="button"
                 className="button-primary button-large"
@@ -443,11 +448,6 @@ export function WatermarkPage() {
               >
                 {session.busy ? 'กำลังประทับลายน้ำ…' : 'ใส่ลายน้ำและดาวน์โหลด'}
               </button>
-
-              <p className="hint">
-                ไฟล์ผลลัพธ์ชื่อ{' '}
-                <code>{doc ? watermarkedFileName(doc.fileName) : 'document-watermarked.pdf'}</code>
-              </p>
             </section>
 
             <CreditNotice message={creditMessage} onDismiss={clearCreditMessage} />
